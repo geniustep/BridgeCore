@@ -12,6 +12,7 @@ class Settings(BaseSettings):
 
     # Application
     APP_NAME: str = "FastAPI Middleware"
+    APP_VERSION: str = "1.0.0"
     ENVIRONMENT: str = Field(default="development", env="ENVIRONMENT")
     DEBUG: bool = Field(default=True, env="DEBUG")
     SECRET_KEY: str = Field(default_factory=lambda: secrets.token_urlsafe(32))
@@ -33,6 +34,7 @@ class Settings(BaseSettings):
         default="redis://localhost:6379/0",
         env="REDIS_URL"
     )
+    CACHE_TTL: int = Field(default=300, env="CACHE_TTL")  # 5 minutes
 
     # JWT
     JWT_SECRET_KEY: str = Field(
@@ -57,6 +59,19 @@ class Settings(BaseSettings):
     # Rate Limiting
     RATE_LIMIT_ENABLED: bool = Field(default=True, env="RATE_LIMIT_ENABLED")
     RATE_LIMIT_PER_MINUTE: int = Field(default=60, env="RATE_LIMIT_PER_MINUTE")
+
+    # Monitoring
+    SENTRY_DSN: Optional[str] = Field(default=None, env="SENTRY_DSN")
+
+    # Celery
+    CELERY_BROKER_URL: str = Field(
+        default="redis://localhost:6379/1",
+        env="CELERY_BROKER_URL"
+    )
+    CELERY_RESULT_BACKEND: str = Field(
+        default="redis://localhost:6379/2",
+        env="CELERY_RESULT_BACKEND"
+    )
 
     @validator("CORS_ORIGINS", pre=True)
     def parse_cors_origins(cls, v):

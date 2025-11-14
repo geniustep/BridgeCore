@@ -5,6 +5,7 @@ from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
+from slowapi.errors import RateLimitExceeded
 from contextlib import asynccontextmanager
 from loguru import logger
 
@@ -12,7 +13,13 @@ from app.core.config import settings
 from app.utils.logger import setup_logging
 from app.middleware.logging_middleware import logging_middleware
 from app.db.session import init_db, close_db
-from app.api.routes import auth, health, systems, batch, barcode, files
+from app.api.routes import auth, health, systems, batch, barcode, files, websocket
+from app.core.rate_limiter import limiter, _rate_limit_exceeded_handler
+from app.core.monitoring import (
+    init_sentry,
+    PrometheusMiddleware,
+    metrics_endpoint
+)
 
 
 @asynccontextmanager
@@ -30,6 +37,9 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting application...")
     setup_logging()
+
+    # Initialize Sentry
+    init_sentry()
 
     # Initialize database
     try:
@@ -78,6 +88,9 @@ app = FastAPI(
     redoc_url="/redoc"
 )
 
+# Add rate limiter state
+app.state.limiter = limiter
+
 # CORS Middleware
 app.add_middleware(
     CORSMiddleware,
@@ -86,6 +99,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Prometheus Middleware
+app.add_middleware(PrometheusMiddleware)
 
 # Logging Middleware
 app.middleware("http")(logging_middleware)
@@ -97,9 +113,30 @@ app.include_router(systems.router)
 app.include_router(batch.router)
 app.include_router(barcode.router)
 app.include_router(files.router)
+app.include_router(websocket.router)
+
+# Add metrics endpoint
+app.add_api_route("/metrics", metrics_endpoint, methods=["GET"], tags=["Monitoring"])
 
 
 # Exception handlers
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    """Handle rate limit exceeded errors"""
+    logger.warning(f"Rate limit exceeded: {request.client.host}")
+
+    return JSONResponse(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        content={
+            "error": {
+                "type": "RateLimitExceeded",
+                "message": "Too many requests. Please try again later.",
+                "request_id": request.state.request_id if hasattr(request.state, "request_id") else None
+            }
+        }
+    )
+
+
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     """Handle validation errors"""

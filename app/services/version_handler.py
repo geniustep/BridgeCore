@@ -12,10 +12,11 @@ class VersionHandler:
     Handle version-specific transformations
 
     Features:
-    - Odoo version migrations (13.0 -> 16.0 -> 18.0)
+    - Odoo version migrations (13.0 -> 14.0 -> 15.0 -> 16.0 -> 17.0 -> 18.0 -> 19.0)
     - Field renaming between versions
     - Data structure changes
     - Deprecated field handling
+    - Automatic multi-hop migration (e.g., 13.0 -> 19.0)
     """
 
     def __init__(self):
