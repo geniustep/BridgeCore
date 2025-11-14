@@ -46,3 +46,12 @@ prometheus-client==0.19.0
 
 # Utility
 tenacity==8.2.3  # For retries
+uuid==1.30  # For unique identifiers
+
+# File handling and export
+openpyxl==3.1.2  # Excel export
+python-magic==0.4.27  # File type detection
+pillow==10.2.0  # Image processing
+
+# Internationalization
+babel==2.14.0  # i18n support

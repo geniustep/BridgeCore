@@ -4,14 +4,27 @@ A powerful middleware API built with FastAPI to bridge Flutter applications with
 
 ## Features
 
+### Core Features
 - 🔐 **Secure Authentication**: JWT-based authentication with refresh tokens
 - 🔄 **Data Unification**: Automatic field mapping between different system versions
-- 🎯 **Multi-System Support**: Odoo, SAP, Salesforce, and more
-- ⚡ **High Performance**: Redis caching + Connection pooling
-- 📝 **Audit Trail**: Complete logging of all operations
-- 🧪 **Well Tested**: Comprehensive test coverage
+- 🎯 **Multi-System Support**: Odoo (13/16/18), SAP, Salesforce, and more
+- ⚡ **High Performance**: Redis caching + Connection pooling + Async operations
+- 📝 **Audit Trail**: Complete logging of all operations with user tracking
+- 🧪 **Well Tested**: Comprehensive test coverage with unit & integration tests
 - 🐳 **Docker Ready**: Full Docker and Docker Compose support
 - 📊 **Auto Documentation**: Interactive API docs with Swagger/ReDoc
+
+### Advanced Features
+- 🔄 **Version Migration**: Automatic data transformation between system versions (e.g., Odoo 13 → 18)
+- 🎯 **Smart Field Fallback**: Intelligent field mapping with automatic fallback options
+- 📦 **Batch Operations**: Execute multiple CRUD operations in a single request
+- 📁 **File Management**: Upload/download files with attachment support
+- 📊 **Report Generation**: Generate PDF, Excel, and CSV reports (Sales, Inventory, Partners)
+- 🔍 **Barcode Integration**: Product lookup and inventory management via barcode
+- 🌍 **Multi-Language Support**: API responses in English, Arabic, and French
+- 🎨 **Universal Schema**: Unified data models across different ERP/CRM systems
+- ⚙️ **Connection Retry Logic**: Automatic retry with exponential backoff
+- 🔌 **Adapter Pattern**: Easy integration with new systems
 
 ## Technology Stack
 
@@ -192,6 +205,140 @@ curl http://localhost:8000/health/db
 
 # Redis health
 curl http://localhost:8000/health/redis
+```
+
+### CRUD Operations
+
+#### Create Record
+
+```bash
+curl -X POST "http://localhost:8000/systems/odoo-prod/create?model=res.partner" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Ahmed Ali",
+    "email": "ahmed@example.com",
+    "phone": "+966501234567"
+  }'
+```
+
+#### Read Records
+
+```bash
+curl -X GET "http://localhost:8000/systems/odoo-prod/read?model=res.partner&limit=10&fields=name,email,phone" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+#### Update Record
+
+```bash
+curl -X PUT "http://localhost:8000/systems/odoo-prod/update/42?model=res.partner" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"phone": "+966502222222"}'
+```
+
+#### Delete Record
+
+```bash
+curl -X DELETE "http://localhost:8000/systems/odoo-prod/delete/42?model=res.partner" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+### Batch Operations
+
+Execute multiple operations in one request:
+
+```bash
+curl -X POST "http://localhost:8000/batch" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "system_id": "odoo-prod",
+    "operations": [
+      {
+        "action": "create",
+        "model": "res.partner",
+        "data": {"name": "Partner 1", "email": "p1@example.com"}
+      },
+      {
+        "action": "update",
+        "model": "res.partner",
+        "record_id": 42,
+        "data": {"phone": "+966501234567"}
+      },
+      {
+        "action": "read",
+        "model": "product.product",
+        "domain": [["type", "=", "product"]],
+        "fields": ["name", "list_price"]
+      }
+    ]
+  }'
+```
+
+### Barcode Operations
+
+```bash
+# Lookup product by barcode
+curl -X GET "http://localhost:8000/barcode/odoo-prod/lookup/6281234567890" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+
+# Search products
+curl -X GET "http://localhost:8000/barcode/odoo-prod/search?name=laptop&limit=5" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+### File Operations
+
+```bash
+# Upload file
+curl -X POST "http://localhost:8000/files/odoo-prod/upload?model=res.partner&record_id=42" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -F "file=@/path/to/image.jpg"
+
+# Download file
+curl -X GET "http://localhost:8000/files/odoo-prod/download/123" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  --output downloaded_file.jpg
+
+# Get attachments
+curl -X GET "http://localhost:8000/files/odoo-prod/attachments?model=res.partner&record_id=42" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+### Report Generation
+
+```bash
+# Sales report
+curl -X GET "http://localhost:8000/files/odoo-prod/report/sales?format=xlsx&start_date=2024-01-01&end_date=2024-12-31" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  --output sales_report.xlsx
+
+# Inventory report
+curl -X GET "http://localhost:8000/files/odoo-prod/report/inventory?format=xlsx" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  --output inventory_report.xlsx
+
+# Partners report
+curl -X GET "http://localhost:8000/files/odoo-prod/report/partners?format=csv" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  --output partners_report.csv
+```
+
+### Export Data
+
+```bash
+curl -X POST "http://localhost:8000/files/odoo-prod/export" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "res.partner",
+    "domain": [["is_company", "=", true]],
+    "fields": ["name", "email", "phone", "city"],
+    "format": "xlsx"
+  }' \
+  --output export.xlsx
 ```
 
 ## Development

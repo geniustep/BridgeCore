@@ -12,7 +12,7 @@ from app.core.config import settings
 from app.utils.logger import setup_logging
 from app.middleware.logging_middleware import logging_middleware
 from app.db.session import init_db, close_db
-from app.api.routes import auth, health
+from app.api.routes import auth, health, systems, batch, barcode, files
 
 
 @asynccontextmanager
@@ -93,6 +93,10 @@ app.middleware("http")(logging_middleware)
 # Include routers
 app.include_router(health.router)
 app.include_router(auth.router)
+app.include_router(systems.router)
+app.include_router(batch.router)
+app.include_router(barcode.router)
+app.include_router(files.router)
 
 
 # Exception handlers
