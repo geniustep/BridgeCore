@@ -36,6 +36,12 @@ class Settings(BaseSettings):
     )
     CACHE_TTL: int = Field(default=300, env="CACHE_TTL")  # 5 minutes
 
+    # Odoo Default Configuration
+    ODOO_URL: str = Field(
+        default="https://odoo.geniura.com",
+        env="ODOO_URL"
+    )
+
     # JWT
     JWT_SECRET_KEY: str = Field(
         default_factory=lambda: secrets.token_urlsafe(32),

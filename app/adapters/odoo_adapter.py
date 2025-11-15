@@ -30,10 +30,11 @@ class OdooAdapter(BaseAdapter):
         self.session_id = None
         self.context = config.get("context", {})
 
-        # HTTP client with timeout
+        # HTTP client with timeout and cookies support
         self.client = httpx.AsyncClient(
             timeout=httpx.Timeout(90.0),  # Like gmobile
-            follow_redirects=True
+            follow_redirects=True,
+            cookies={}  # Enable cookie storage
         )
 
         # Smart field fallbacks
@@ -100,10 +101,14 @@ class OdooAdapter(BaseAdapter):
 
             if "result" in result and result["result"].get("uid"):
                 self.uid = result["result"]["uid"]
-                self.session_id = response.cookies.get("session_id")
+                # Get session_id from cookies - httpx automatically stores cookies
+                self.session_id = response.cookies.get("session_id") or response.cookies.get("session_id_http")
                 self.is_connected = True
+                
+                # Log cookies for debugging
+                logger.debug(f"Odoo session cookies: {dict(response.cookies)}")
 
-                logger.info(f"Odoo authentication successful for user: {username}")
+                logger.info(f"Odoo authentication successful for user: {username}, uid: {self.uid}")
 
                 return {
                     "success": True,
@@ -160,12 +165,28 @@ class OdooAdapter(BaseAdapter):
             params["sort"] = order
 
         try:
+            # Use call_kw endpoint for Odoo 18+
+            call_params = {
+                "model": model,
+                "method": "search_read",
+                "args": [],
+                "kwargs": {
+                    "domain": domain or [],
+                    "fields": fields or [],
+                    "limit": limit or 80,
+                    "offset": offset or 0,
+                    "order": order or None,
+                    "context": self.context
+                }
+            }
+            
             result = await self._call_odoo(
-                "/web/dataset/search_read",
-                params
+                "/web/dataset/call_kw",
+                call_params
             )
 
-            records = result.get("records", [])
+            # Result is already a list of records from call_kw
+            records = result if isinstance(result, list) else result.get("records", [])
 
             # Apply smart field fallback
             if fields:
@@ -392,10 +413,23 @@ class OdooAdapter(BaseAdapter):
         }
 
         try:
+            # Add id to payload if not present (required by Odoo JSON-RPC)
+            if "id" not in payload:
+                payload["id"] = 1
+            
             response = await self.client.post(
                 f"{self.url}{endpoint}",
                 json=payload
             )
+
+            # Check if response is JSON
+            content_type = response.headers.get("content-type", "")
+            if "application/json" not in content_type:
+                response_text = response.text[:500]  # First 500 chars
+                logger.error(f"Odoo returned non-JSON response. URL: {self.url}{endpoint}, Content-Type: {content_type}, Status: {response.status_code}, Response: {response_text}")
+                # Try to get more info about the request
+                logger.error(f"Request cookies: {dict(self.client.cookies)}")
+                raise Exception(f"Odoo returned non-JSON response: {content_type}. Status: {response.status_code}")
 
             result = response.json()
 

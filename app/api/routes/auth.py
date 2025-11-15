@@ -133,6 +133,66 @@ async def login(
     # Create system_id
     system_id = f"odoo-{database}"
 
+    # Automatically connect to Odoo system using login credentials
+    try:
+        from app.models.system import System
+        
+        # Get system service (singleton)
+        from app.api.routes.systems import get_system_service
+        service = get_system_service(db)
+        
+        # Check if system exists in database
+        query = select(System).where(System.system_id == system_id).where(System.user_id == user.id)
+        result = await db.execute(query)
+        system = result.scalar_one_or_none()
+        
+        # Prepare Odoo connection config
+        odoo_config = {
+            "system_type": "odoo",
+            "url": settings.ODOO_URL,
+            "database": database,
+            "username": username,
+            "password": password
+        }
+        
+        # Create or update system in database
+        if not system:
+            system = System(
+                user_id=user.id,
+                system_id=system_id,
+                system_type="odoo",
+                name=f"Odoo {database}",
+                description=f"Odoo system connection for {database}",
+                connection_config=odoo_config,
+                is_active=True
+            )
+            db.add(system)
+        else:
+            system.connection_config = odoo_config
+            system.is_active = True
+        
+        await db.commit()
+        await db.refresh(system)
+        
+        # Cache system_id -> db_id mapping
+        service._system_id_cache[system_id] = system.id
+        
+        # Connect to Odoo system
+        try:
+            adapter = await service.connect_system(
+                system_id=system_id,
+                system_type="odoo",
+                config=odoo_config
+            )
+            logger.info(f"Auto-connected to Odoo system: {system_id} (connected: {adapter.is_connected})")
+        except Exception as e:
+            logger.warning(f"Failed to auto-connect to Odoo: {str(e)}")
+            # Continue even if connection fails - user can connect manually later
+        
+    except Exception as e:
+        logger.error(f"Error during auto-connection to Odoo: {str(e)}")
+        # Continue with login even if auto-connection fails
+
     # Build user object in Flutter-expected format
     user_data = {
         "id": user.id,
