@@ -36,6 +36,7 @@ class SystemService:
         self.field_mapping = FieldMappingService()
         self.version_handler = VersionHandler()
         self.adapters: Dict[str, BaseAdapter] = {}
+        self._system_id_cache: Dict[str, int] = {}  # Cache system_id -> db_id mapping
 
     def _get_adapter(
         self,
@@ -535,16 +536,19 @@ class SystemService:
             logger.error(f"Get metadata error: {str(e)}")
             raise
 
-    def _get_system_db_id(self, system_id: str) -> int:
+    def _get_system_db_id(self, system_id: str) -> Optional[int]:
         """
-        Get database ID for system (temporary - should query from DB)
+        Get database ID for system from cache or return None
 
         Args:
             system_id: System identifier
 
         Returns:
-            Database ID
+            Database ID or None if not found
         """
-        # TODO: Query from database
-        # For now, return dummy ID
-        return 1
+        # Try to get from cache (set when connecting)
+        cached_id = getattr(self, '_system_id_cache', {}).get(system_id)
+        if cached_id:
+            return cached_id
+        # Return None if not found (audit will handle it)
+        return None

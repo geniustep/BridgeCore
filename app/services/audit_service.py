@@ -25,7 +25,7 @@ class AuditService:
     async def log_operation(
         self,
         user_id: int,
-        system_id: int,
+        system_id: Optional[int],
         action: str,
         model: Optional[str] = None,
         record_id: Optional[str] = None,

@@ -26,15 +26,22 @@ router = APIRouter(prefix="/systems", tags=["Systems"])
 
 # Initialize services
 cache_service = CacheService(settings.REDIS_URL)
-audit_repo = None  # Will be initialized with DB session
-system_service = None  # Will be initialized with dependencies
+# Global system service instance (singleton) to preserve connections
+_system_service: Optional[SystemService] = None
 
 
 def get_system_service(db: AsyncSession = Depends(get_db)) -> SystemService:
-    """Get system service instance"""
-    audit_repo = AuditRepository(db)
-    audit_service = AuditService(audit_repo)
-    return SystemService(cache_service, audit_service)
+    """Get system service instance (singleton)"""
+    global _system_service
+    if _system_service is None:
+        audit_repo = AuditRepository(db)
+        audit_service = AuditService(audit_repo)
+        _system_service = SystemService(cache_service, audit_service)
+    else:
+        # Update audit service with current DB session
+        audit_repo = AuditRepository(db)
+        _system_service.audit = AuditService(audit_repo)
+    return _system_service
 
 
 @router.post("/{system_id}/create", response_model=CRUDResponse)
@@ -326,6 +333,7 @@ async def connect_system(
     system_id: str,
     config: Dict[str, Any],
     current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
     service: SystemService = Depends(get_system_service)
 ):
     """
@@ -350,7 +358,42 @@ async def connect_system(
         ```
     """
     try:
+        from app.models.system import System
+        from sqlalchemy import select
+        
         system_type = config.get("system_type", "odoo")
+        
+        # Check if system exists in database
+        query = select(System).where(System.system_id == system_id).where(System.user_id == current_user.id)
+        result = await db.execute(query)
+        system = result.scalar_one_or_none()
+        
+        # Create or update system in database
+        if not system:
+            system = System(
+                user_id=current_user.id,
+                system_id=system_id,
+                system_type=system_type,
+                system_version=config.get("system_version"),
+                name=config.get("name", system_id),
+                description=config.get("description", f"{system_type} system connection"),
+                connection_config=config,
+                is_active=True
+            )
+            db.add(system)
+        else:
+            system.connection_config = config
+            system.is_active = True
+            if "system_version" in config:
+                system.system_version = config.get("system_version")
+        
+        await db.commit()
+        await db.refresh(system)
+        
+        # Cache system_id -> db_id mapping
+        service._system_id_cache[system_id] = system.id
+        
+        # Connect to system
         adapter = await service.connect_system(
             system_id=system_id,
             system_type=system_type,
@@ -360,11 +403,13 @@ async def connect_system(
         return {
             "success": True,
             "message": f"Connected to {system_id}",
-            "is_connected": adapter.is_connected
+            "is_connected": adapter.is_connected,
+            "system_id": system.id
         }
 
     except Exception as e:
         logger.error(f"Connect system error: {str(e)}")
+        await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
