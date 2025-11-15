@@ -7,11 +7,9 @@ Provides real-time notifications for:
 - Audit log events
 - Cache invalidation
 """
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from typing import Dict, Set
 from loguru import logger
-from app.core.security import get_current_user
-from app.models.user import User
 import json
 import asyncio
 

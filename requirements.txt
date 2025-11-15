@@ -30,12 +30,10 @@ aiohttp==3.9.1
 # Pydantic for validation
 pydantic==2.5.3
 pydantic-settings==2.1.0
+email-validator==2.1.0
 
 # Data processing
 python-dateutil==2.8.2
-
-# CORS
-python-cors==1.0.0
 
 # Environment variables
 python-dotenv==1.0.0
@@ -53,7 +51,6 @@ flower==2.0.1  # Celery monitoring
 
 # Utility
 tenacity==8.2.3  # For retries
-uuid==1.30  # For unique identifiers
 
 # File handling and export
 openpyxl==3.1.2  # Excel export

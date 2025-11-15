@@ -54,6 +54,11 @@ async def get_db() -> AsyncSession:
 async def init_db():
     """Initialize database (create tables)"""
     from app.db.base import Base
+    # Import all models to register them with SQLAlchemy
+    from app.models.user import User
+    from app.models.system import System
+    from app.models.audit_log import AuditLog
+    from app.models.field_mapping import FieldMapping
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
