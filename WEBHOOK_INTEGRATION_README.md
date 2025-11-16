@@ -21,10 +21,12 @@ The BridgeCore Webhook Integration provides a comprehensive, real-time change tr
 
 ### Key Capabilities
 
-- ✅ **Real-time Change Detection**: Track all changes in Odoo instantly
+- ✅ **Real-time Change Detection**: Track all changes in Odoo instantly via ORM hooks
 - ✅ **Smart Multi-User Sync**: Efficient synchronization for multiple devices/users
 - ✅ **Universal Model Discovery**: Automatically discover and monitor all Odoo models
-- ✅ **PostgreSQL Triggers**: Database-level change detection
+- ✅ **ORM-based Detection**: Odoo-native change tracking through enhanced webhook module
+- ✅ **Retry Mechanism**: Automatic retry with exponential backoff and dead letter queue
+- ✅ **Priority & Categories**: Classify events by priority (high/medium/low) and category
 - ✅ **GraphQL API**: Flexible querying with modern GraphQL
 - ✅ **WebSocket Support**: Real-time push notifications
 - ✅ **Enterprise Monitoring**: Prometheus metrics + Grafana dashboards
@@ -66,7 +68,8 @@ query {
 - Auto-discovery of all Odoo models
 - Classification by importance (critical/important/standard)
 - Adaptive monitoring strategies
-- PostgreSQL triggers for real-time detection
+- ORM-based detection through webhook.config records
+- Automatic webhook configuration per model
 
 ### 4. Monitoring & Observability
 
@@ -82,14 +85,20 @@ query {
 ```
 Flutter Apps → BridgeCore → Odoo ERP
                     ↓
-            PostgreSQL Triggers
+        Enhanced Webhook Module (ORM)
                     ↓
             Webhook Events Table
                     ↓
-        Redis Cache + Celery Queue
+        Redis Cache + Priority Queue
                     ↓
         WebSocket + GraphQL + REST
 ```
+
+**Detection Method**: ORM-based change tracking via auto-webhook-odoo module
+- Odoo models trigger webhook.event creation on create/write/unlink
+- Retry mechanism with exponential backoff
+- Dead letter queue for failed events
+- Priority-based processing
 
 For detailed architecture, see [WEBHOOK_INTEGRATION_ARCHITECTURE.md](./WEBHOOK_INTEGRATION_ARCHITECTURE.md)
 
@@ -120,29 +129,37 @@ New dependencies added:
 - `python-socketio` - Enhanced WebSocket
 - `aio-pika` - AMQP async support
 
-### 3. Setup PostgreSQL Triggers
+### 3. Install Enhanced Odoo Webhook Module
+
+Install the `auto-webhook-odoo` module in your Odoo instance:
 
 ```bash
-# Connect to your Odoo PostgreSQL database
-psql -U odoo_user -d odoo_database -f scripts/setup_triggers.sql
-```
+# Clone the enhanced webhook module
+git clone https://github.com/geniustep/auto-webhook-odoo.git
 
-This will:
-- Create trigger functions
-- Apply triggers to critical tables
-- Setup notification channels
-- Create management functions
-
-### 4. Install Odoo Module
-
-Install the `custom-model-webhook` module in your Odoo instance:
-
-```bash
 # Copy module to Odoo addons
-cp -r /path/to/odoo-webhook-corp/custom-model-webhook /path/to/odoo/addons/
+cp -r auto-webhook-odoo /path/to/odoo/addons/
 
 # Update apps list in Odoo
-# Install "Auto Webhook Flutter" module
+# Install "Enhanced Auto Webhook" module
+```
+
+**Important**: The enhanced module provides:
+- `webhook.event` model with priority, category, status fields
+- `webhook.config` model for per-model configuration
+- `webhook.subscriber` model for endpoint management
+- Retry mechanism with exponential backoff
+- Dead letter queue for failed events
+- Batch processing support
+
+### 4. Initialize Universal Audit (Optional)
+
+BridgeCore can automatically discover and configure webhooks for all Odoo models:
+
+```python
+# This happens automatically on first sync
+# Or trigger manually via API endpoint
+POST /api/v1/webhooks/initialize-audit
 ```
 
 ---
@@ -436,10 +453,12 @@ Prometheus alerts are configured in `monitoring/prometheus/rules/webhook_alerts.
 **Problem**: Webhook events are not being recorded
 
 **Solutions**:
-- Check if Odoo module is installed
-- Verify PostgreSQL triggers are created: `SELECT * FROM list_bridgecore_triggers();`
+- Check if enhanced webhook module (`auto-webhook-odoo`) is installed in Odoo
+- Verify `webhook.event` and `webhook.config` models exist in Odoo
+- Check that webhook configurations are enabled for target models
+- Query webhook.config in Odoo: `Settings > Technical > Webhook Configurations`
 - Check Odoo logs for errors
-- Test notification: `SELECT test_bridgecore_notification();`
+- Verify OdooClient connection is working
 
 #### 2. High Latency
 
@@ -463,14 +482,27 @@ Prometheus alerts are configured in `monitoring/prometheus/rules/webhook_alerts.
 ### Debug Commands
 
 ```bash
-# Check PostgreSQL triggers
-psql -d odoo_db -c "SELECT * FROM list_bridgecore_triggers();"
+# Check webhook configurations in Odoo (via OdooClient)
+# In Python/IPython:
+from app.utils.odoo_client import OdooClient
+client = OdooClient(base_url="...", session_id="...")
+configs = client.get_webhook_configs()
+print(configs)
 
-# Test notification system
-psql -d odoo_db -c "SELECT test_bridgecore_notification();"
+# Check recent webhook events
+events = client.search_read("webhook.event", [], limit=10, order="timestamp desc")
+print(events)
 
-# Check webhook queue
-redis-cli LLEN webhook_queue
+# Check dead letter queue
+dead_events = client.get_dead_letter_events(limit=50)
+print(dead_events)
+
+# Check webhook statistics
+stats = client.get_webhook_statistics()
+print(stats)
+
+# Check Redis cache
+redis-cli KEYS "webhook:*"
 
 # View recent errors
 tail -f logs/app.log | grep ERROR
@@ -501,9 +533,14 @@ headers = {"Cookie": f"session_id={session_id}"}
 headers = {"Authorization": f"Bearer {jwt_token}"}
 ```
 
-#### 3. No Changes to Odoo Module
+#### 3. Odoo Module Upgrade Required
 
-The `custom-model-webhook` module works as-is. No changes needed.
+The old `custom-model-webhook` module must be replaced with `auto-webhook-odoo`:
+
+**Migration Steps**:
+1. Uninstall old `custom-model-webhook` module (if installed)
+2. Install new `auto-webhook-odoo` module from https://github.com/geniustep/auto-webhook-odoo
+3. The new module provides enhanced features: retry, priority, categories, dead letter queue
 
 #### 4. New Features Available
 
