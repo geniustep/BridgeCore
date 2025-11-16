@@ -59,3 +59,14 @@ pillow==10.2.0  # Image processing
 
 # Internationalization
 babel==2.14.0  # i18n support
+
+# GraphQL Support
+strawberry-graphql[fastapi]==0.218.0  # GraphQL API
+aiodataloader==0.2.1  # DataLoader pattern for GraphQL
+
+# Enhanced WebSocket
+python-socketio==5.11.0  # Socket.IO support
+aio-pika==9.4.0  # AMQP async support
+
+# PostgreSQL Listen/Notify
+psycopg2-binary==2.9.9  # Already included, used for LISTEN/NOTIFY

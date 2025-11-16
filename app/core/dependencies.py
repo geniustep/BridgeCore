@@ -150,3 +150,14 @@ def get_user_agent(request) -> str:
         User agent string
     """
     return request.headers.get("user-agent", "unknown")
+
+
+async def get_cache_service():
+    """
+    Get cache service instance
+
+    Returns:
+        CacheService instance
+    """
+    from app.services.cache_service import CacheService
+    return CacheService()

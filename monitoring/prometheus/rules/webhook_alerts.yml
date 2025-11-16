@@ -1,0 +1,69 @@
+groups:
+  - name: webhook_alerts
+    interval: 30s
+    rules:
+      # High error rate
+      - alert: WebhookHighErrorRate
+        expr: rate(webhook_errors_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          component: webhook
+        annotations:
+          summary: "High webhook error rate detected"
+          description: "Webhook error rate is {{ $value | humanizePercentage }} (threshold: 5%)"
+
+      # Slow processing
+      - alert: WebhookSlowProcessing
+        expr: histogram_quantile(0.95, sum(rate(webhook_processing_seconds_bucket[5m])) by (le, model)) > 1
+        for: 10m
+        labels:
+          severity: warning
+          component: webhook
+        annotations:
+          summary: "Slow webhook processing detected"
+          description: "95th percentile processing time is {{ $value }}s for model {{ $labels.model }}"
+
+      # Large queue size
+      - alert: WebhookQueueBacklog
+        expr: webhook_queue_size > 1000
+        for: 5m
+        labels:
+          severity: warning
+          component: webhook
+        annotations:
+          summary: "Large webhook queue detected"
+          description: "Webhook queue size is {{ $value }} items"
+
+      # Database connection issues
+      - alert: DatabaseConnectionFailure
+        expr: up{job="bridgecore"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "Database connection failure"
+          description: "Cannot connect to database for BridgeCore"
+
+      # High memory usage
+      - alert: HighMemoryUsage
+        expr: process_resident_memory_bytes > 1073741824  # 1GB
+        for: 5m
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "High memory usage"
+          description: "Memory usage is {{ $value | humanize1024 }}"
+
+      # WebSocket connection surge
+      - alert: WebSocketConnectionSurge
+        expr: rate(websocket_connections_active[5m]) > 100
+        for: 2m
+        labels:
+          severity: info
+          component: websocket
+        annotations:
+          summary: "WebSocket connection surge"
+          description: "Rapid increase in WebSocket connections: {{ $value }}/s"

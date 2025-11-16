@@ -15,6 +15,8 @@ from app.utils.logger import setup_logging
 from app.middleware.logging_middleware import logging_middleware
 from app.db.session import init_db, close_db
 from app.api.routes import auth, health, systems, batch, barcode, files, websocket, odoo
+from app.modules.webhook import router as webhook_router_v1
+from app.modules.webhook import router_v2 as webhook_router_v2
 from app.core.rate_limiter import limiter, _rate_limit_exceeded_handler
 from app.core.monitoring import (
     init_sentry,
@@ -119,6 +121,10 @@ app.include_router(batch.router)
 app.include_router(barcode.router)
 app.include_router(files.router)
 app.include_router(websocket.router)
+
+# Webhook routers (NEW)
+app.include_router(webhook_router_v1.router)  # /api/v1/webhooks/*
+app.include_router(webhook_router_v2.router)  # /api/v2/sync/*
 
 # Add metrics endpoint
 app.add_api_route("/metrics", metrics_endpoint, methods=["GET"], tags=["Monitoring"])
