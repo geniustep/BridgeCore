@@ -3,6 +3,7 @@ Main FastAPI Application
 """
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from slowapi.errors import RateLimitExceeded
@@ -99,6 +100,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Gzip Compression Middleware - Reduce response size by 70-90%
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # Prometheus Middleware
 app.add_middleware(PrometheusMiddleware)

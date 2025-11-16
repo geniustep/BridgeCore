@@ -1,0 +1,62 @@
+version: '3.8'
+
+# Development Docker Compose - Lightweight version for local development
+
+services:
+  # FastAPI Application
+  fastapi:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bridgecore-api-dev
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/bridgecore_dev
+      - REDIS_URL=redis://redis:6379/0
+      - DEBUG=true
+      - ENVIRONMENT=development
+      - RATE_LIMIT_ENABLED=false
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - .:/app
+    networks:
+      - bridgecore-dev
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: bridgecore-postgres-dev
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=bridgecore_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    networks:
+      - bridgecore-dev
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: bridgecore-redis-dev
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_dev_data:/data
+    networks:
+      - bridgecore-dev
+
+volumes:
+  postgres_dev_data:
+  redis_dev_data:
+
+networks:
+  bridgecore-dev:
+    driver: bridge
