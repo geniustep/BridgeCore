@@ -515,3 +515,251 @@ async def websocket_stats():
             for channel, users in manager.channel_subscriptions.items()
         }
     }
+
+
+# ===== Critical Events Support (for Smart Sync) =====
+
+async def notify_critical_event(
+    user_id: int,
+    event_type: str,
+    model: str,
+    record_id: int,
+    data: dict,
+    priority: str = "high"
+):
+    """
+    Send critical event notification to user via WebSocket
+
+    This is used for high-priority events that need immediate attention,
+    such as:
+    - Urgent sale orders
+    - Critical stock movements
+    - Important customer updates
+
+    Args:
+        user_id: User ID to notify
+        event_type: Event type (create, write, unlink)
+        model: Odoo model name
+        record_id: Record ID
+        data: Event data/payload
+        priority: Event priority (high, medium, low)
+    """
+    message = {
+        "type": "critical_event",
+        "channel": "critical_events",
+        "priority": priority,
+        "event": {
+            "event_type": event_type,
+            "model": model,
+            "record_id": record_id,
+            "data": data,
+            "timestamp": datetime.now().isoformat()
+        }
+    }
+
+    await manager.send_personal_message(message, user_id)
+    logger.info(
+        f"Sent critical {event_type} event for {model}:{record_id} "
+        f"to user {user_id}"
+    )
+
+
+async def broadcast_urgent_update(
+    model: str,
+    record_id: int,
+    event_type: str,
+    data: dict,
+    affected_users: List[int] = None
+):
+    """
+    Broadcast urgent update to multiple users
+
+    Used when a critical change affects multiple users and they need
+    to be notified immediately.
+
+    Args:
+        model: Odoo model name
+        record_id: Record ID
+        event_type: Event type
+        data: Event data
+        affected_users: Optional list of specific user IDs to notify.
+                       If None, broadcasts to all connected users.
+    """
+    message = {
+        "type": "urgent_update",
+        "channel": "urgent_updates",
+        "event": {
+            "model": model,
+            "record_id": record_id,
+            "event_type": event_type,
+            "data": data,
+            "timestamp": datetime.now().isoformat()
+        }
+    }
+
+    if affected_users:
+        for user_id in affected_users:
+            await manager.send_personal_message(message, user_id)
+    else:
+        await manager.broadcast(message)
+
+    logger.info(
+        f"Broadcast urgent {event_type} for {model}:{record_id} "
+        f"to {len(affected_users) if affected_users else 'all'} users"
+    )
+
+
+async def notify_sync_event(
+    user_id: int,
+    event_id: int,
+    model: str,
+    record_id: int,
+    event_type: str,
+    app_type: str = None
+):
+    """
+    Notify user about new sync event
+
+    This is called when a new webhook event is created that affects
+    the user's app. The client can then trigger a sync pull.
+
+    Args:
+        user_id: User ID
+        event_id: Webhook event ID
+        model: Odoo model name
+        record_id: Record ID
+        event_type: Event type (create/write/unlink)
+        app_type: Optional app type filter
+    """
+    message = {
+        "type": "sync_event",
+        "channel": "sync_events",
+        "event": {
+            "id": event_id,
+            "model": model,
+            "record_id": record_id,
+            "event_type": event_type,
+            "app_type": app_type,
+            "timestamp": datetime.now().isoformat()
+        },
+        "action": "trigger_sync"  # Hint for client to call /api/v2/sync/pull
+    }
+
+    await manager.send_personal_message(message, user_id)
+    logger.debug(f"Notified user {user_id} about sync event {event_id}")
+
+
+# ===== Redis PubSub Integration (Optional) =====
+
+try:
+    import redis.asyncio as redis
+    from app.core.config import settings
+
+    # Redis client for pub/sub
+    redis_pubsub_client = None
+
+    async def init_redis_pubsub():
+        """Initialize Redis PubSub for distributed WebSocket events"""
+        global redis_pubsub_client
+
+        try:
+            redis_pubsub_client = redis.from_url(
+                settings.REDIS_URL,
+                encoding="utf-8",
+                decode_responses=True
+            )
+            logger.info("Redis PubSub initialized for WebSocket events")
+        except Exception as e:
+            logger.warning(f"Failed to initialize Redis PubSub: {e}")
+            redis_pubsub_client = None
+
+    async def publish_event_to_redis(channel: str, event: dict):
+        """
+        Publish event to Redis channel for distributed handling
+
+        This allows multiple BridgeCore instances to share WebSocket events.
+
+        Args:
+            channel: Redis channel name
+            event: Event data to publish
+        """
+        if redis_pubsub_client:
+            try:
+                await redis_pubsub_client.publish(
+                    channel,
+                    json.dumps(event)
+                )
+                logger.debug(f"Published event to Redis channel: {channel}")
+            except Exception as e:
+                logger.error(f"Failed to publish to Redis: {e}")
+
+    async def subscribe_to_redis_events():
+        """
+        Subscribe to Redis events and forward to WebSocket clients
+
+        This should be run as a background task.
+        """
+        if not redis_pubsub_client:
+            logger.warning("Redis PubSub not available")
+            return
+
+        pubsub = redis_pubsub_client.pubsub()
+
+        try:
+            # Subscribe to channels
+            await pubsub.subscribe(
+                "critical_events",
+                "urgent_updates",
+                "sync_events"
+            )
+
+            logger.info("Subscribed to Redis event channels")
+
+            # Listen for messages
+            async for message in pubsub.listen():
+                if message["type"] == "message":
+                    try:
+                        event_data = json.loads(message["data"])
+                        channel = message["channel"]
+
+                        # Forward to appropriate users based on channel
+                        if channel == "critical_events":
+                            user_id = event_data.get("user_id")
+                            if user_id:
+                                await manager.send_personal_message(
+                                    event_data,
+                                    user_id
+                                )
+
+                        elif channel == "urgent_updates":
+                            await manager.broadcast(event_data)
+
+                        elif channel == "sync_events":
+                            user_id = event_data.get("user_id")
+                            if user_id:
+                                await manager.send_personal_message(
+                                    event_data,
+                                    user_id
+                                )
+
+                    except Exception as e:
+                        logger.error(f"Error processing Redis message: {e}")
+
+        except Exception as e:
+            logger.error(f"Redis subscription error: {e}")
+        finally:
+            await pubsub.unsubscribe()
+            await pubsub.close()
+
+except ImportError:
+    logger.warning("redis.asyncio not available, skipping PubSub features")
+    redis_pubsub_client = None
+
+    async def init_redis_pubsub():
+        pass
+
+    async def publish_event_to_redis(channel: str, event: dict):
+        pass
+
+    async def subscribe_to_redis_events():
+        pass

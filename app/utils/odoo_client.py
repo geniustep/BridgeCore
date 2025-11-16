@@ -378,6 +378,194 @@ class OdooClient:
 
 
     # -----------------------------
+    # Smart Sync utilities for user.sync.state
+    # -----------------------------
+    def pull_events(
+        self,
+        last_event_id: int = 0,
+        models: Optional[List[str]] = None,
+        limit: int = 100
+    ) -> List[Dict[str, Any]]:
+        """
+        Pull webhook events from Odoo for smart sync.
+
+        Args:
+            last_event_id: Last event ID synced (get events with id > this)
+            models: Optional filter by model names
+            limit: Maximum number of events to retrieve
+
+        Returns:
+            List of webhook event records ordered by ID ascending
+        """
+        domain: List = [
+            ("id", ">", last_event_id),
+            ("is_archived", "=", False)
+        ]
+
+        if models:
+            domain.append(("model", "in", models))
+
+        fields = [
+            "id", "model", "record_id", "event",
+            "payload", "timestamp", "user_id",
+            "priority", "category", "status",
+            "changed_fields"
+        ]
+
+        return self.search_read(
+            "update.webhook",
+            domain=domain,
+            fields=fields,
+            limit=limit,
+            order="id asc"  # Important: oldest first for proper sync
+        )
+
+    def get_or_create_sync_state(
+        self,
+        user_id: int,
+        device_id: str,
+        app_type: str
+    ) -> Dict[str, Any]:
+        """
+        Get or create sync state for a user/device.
+
+        This method calls the Odoo model method to get or create
+        a sync state record.
+
+        Args:
+            user_id: Odoo user ID
+            device_id: Unique device identifier
+            app_type: Application type (sales_app, delivery_app, etc.)
+
+        Returns:
+            Dict with sync state data including last_event_id
+        """
+        return self.call_kw(
+            "user.sync.state",
+            "get_or_create_state",
+            [user_id, device_id, app_type]
+        )
+
+    def update_sync_state(
+        self,
+        state_id: int,
+        last_event_id: int,
+        event_count: int = 0
+    ) -> bool:
+        """
+        Update sync state after successful sync.
+
+        Args:
+            state_id: ID of the sync state record
+            last_event_id: New last event ID
+            event_count: Number of events in this sync
+
+        Returns:
+            True if successful
+        """
+        return bool(self.call_kw(
+            "user.sync.state",
+            "write",
+            [[state_id], {
+                "last_event_id": last_event_id,
+                "last_sync_time": self._get_current_datetime_iso(),
+                "sync_count": ("increment", 1)  # Use SQL increment
+            }]
+        ))
+
+    def reset_sync_state(
+        self,
+        user_id: int,
+        device_id: str
+    ) -> Dict[str, Any]:
+        """
+        Reset sync state for a user/device to force full sync.
+
+        Args:
+            user_id: Odoo user ID
+            device_id: Device identifier
+
+        Returns:
+            Dict with success status
+        """
+        # Search for the state
+        states = self.search(
+            "user.sync.state",
+            domain=[
+                ("user_id", "=", user_id),
+                ("device_id", "=", device_id)
+            ],
+            limit=1
+        )
+
+        if not states:
+            return {"success": False, "message": "Sync state not found"}
+
+        # Call reset method
+        self.call_kw(
+            "user.sync.state",
+            "reset_sync_state",
+            [states]
+        )
+
+        return {"success": True, "message": "Sync state reset successfully"}
+
+    def get_sync_state(
+        self,
+        user_id: int,
+        device_id: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get sync state for a user/device.
+
+        Args:
+            user_id: Odoo user ID
+            device_id: Device identifier
+
+        Returns:
+            Dict with sync state or None if not found
+        """
+        states = self.search_read(
+            "user.sync.state",
+            domain=[
+                ("user_id", "=", user_id),
+                ("device_id", "=", device_id)
+            ],
+            fields=[
+                "id", "user_id", "device_id", "app_type",
+                "last_event_id", "last_sync_time", "sync_count",
+                "is_active", "total_events_synced"
+            ],
+            limit=1
+        )
+
+        return states[0] if states else None
+
+    def get_sync_statistics(
+        self,
+        user_id: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """
+        Get sync statistics.
+
+        Args:
+            user_id: Optional user ID to filter stats
+
+        Returns:
+            Dict with sync statistics
+        """
+        return self.call_kw(
+            "user.sync.state",
+            "get_sync_statistics",
+            [user_id] if user_id else []
+        )
+
+    def _get_current_datetime_iso(self) -> str:
+        """Get current datetime in ISO format."""
+        from datetime import datetime
+        return datetime.utcnow().isoformat()
+
+    # -----------------------------
     # Context manager
     # -----------------------------
     def close(self) -> None:
