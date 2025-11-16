@@ -8,10 +8,11 @@ Provides real-time notifications for:
 - Cache invalidation
 """
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from typing import Dict, Set
+from typing import Dict, Set, List
 from loguru import logger
 import json
 import asyncio
+from datetime import datetime
 
 
 router = APIRouter()
@@ -26,6 +27,7 @@ class ConnectionManager:
     - Broadcast to all connections
     - Broadcast to specific user
     - Channel-based subscriptions
+    - Odoo model subscriptions for real-time updates
     """
 
     def __init__(self):
@@ -34,6 +36,9 @@ class ConnectionManager:
 
         # channel -> Set of user_ids subscribed
         self.channel_subscriptions: Dict[str, Set[int]] = {}
+
+        # Odoo model subscriptions: "system:model:id" -> Set of user_ids
+        self.model_subscriptions: Dict[str, Set[int]] = {}
 
     async def connect(self, websocket: WebSocket, user_id: int):
         """
@@ -137,6 +142,105 @@ class ConnectionManager:
             for user_id in self.channel_subscriptions[channel]:
                 await self.send_personal_message(message, user_id)
 
+    async def subscribe_to_model(
+        self,
+        user_id: int,
+        system_id: str,
+        model: str,
+        record_ids: List[int]
+    ):
+        """
+        Subscribe user to Odoo model updates
+
+        Args:
+            user_id: User ID
+            system_id: System identifier
+            model: Odoo model name
+            record_ids: List of record IDs to subscribe to
+        """
+        for record_id in record_ids:
+            subscription_key = f"{system_id}:{model}:{record_id}"
+
+            if subscription_key not in self.model_subscriptions:
+                self.model_subscriptions[subscription_key] = set()
+
+            self.model_subscriptions[subscription_key].add(user_id)
+
+        logger.info(
+            f"User {user_id} subscribed to {system_id}:{model} "
+            f"records: {record_ids}"
+        )
+
+    async def unsubscribe_from_model(
+        self,
+        user_id: int,
+        system_id: str,
+        model: str,
+        record_ids: List[int]
+    ):
+        """
+        Unsubscribe user from Odoo model updates
+
+        Args:
+            user_id: User ID
+            system_id: System identifier
+            model: Odoo model name
+            record_ids: List of record IDs to unsubscribe from
+        """
+        for record_id in record_ids:
+            subscription_key = f"{system_id}:{model}:{record_id}"
+
+            if subscription_key in self.model_subscriptions:
+                self.model_subscriptions[subscription_key].discard(user_id)
+
+                # Clean up empty subscriptions
+                if not self.model_subscriptions[subscription_key]:
+                    del self.model_subscriptions[subscription_key]
+
+        logger.info(
+            f"User {user_id} unsubscribed from {system_id}:{model} "
+            f"records: {record_ids}"
+        )
+
+    async def broadcast_model_update(
+        self,
+        system_id: str,
+        model: str,
+        record_id: int,
+        operation: str,
+        data: dict
+    ):
+        """
+        Broadcast Odoo model update to subscribed users
+
+        Args:
+            system_id: System identifier
+            model: Odoo model name
+            record_id: Record ID
+            operation: Operation type (create, write, unlink)
+            data: Update data
+        """
+        subscription_key = f"{system_id}:{model}:{record_id}"
+
+        if subscription_key in self.model_subscriptions:
+            message = {
+                "type": "model_update",
+                "system_id": system_id,
+                "model": model,
+                "record_id": record_id,
+                "operation": operation,
+                "data": data,
+                "timestamp": datetime.now().isoformat()
+            }
+
+            for user_id in self.model_subscriptions[subscription_key]:
+                await self.send_personal_message(message, user_id)
+
+            logger.debug(
+                f"Broadcast {operation} on {model}:{record_id} "
+                f"to {len(self.model_subscriptions[subscription_key])} users"
+            )
+
     def get_connection_count(self) -> int:
         """Get total number of active connections"""
         return sum(len(conns) for conns in self.active_connections.values())
@@ -221,6 +325,58 @@ async def websocket_endpoint(websocket: WebSocket, user_id: int):
                         "type": "pong",
                         "timestamp": message.get("timestamp")
                     })
+
+                elif message_type == "subscribe_model":
+                    # Subscribe to Odoo model updates
+                    system_id = message.get("system_id")
+                    model = message.get("model")
+                    record_ids = message.get("record_ids", [])
+
+                    if system_id and model and record_ids:
+                        await manager.subscribe_to_model(
+                            user_id=user_id,
+                            system_id=system_id,
+                            model=model,
+                            record_ids=record_ids
+                        )
+                        await websocket.send_json({
+                            "type": "status",
+                            "message": f"Subscribed to {model} records: {record_ids}",
+                            "system_id": system_id,
+                            "model": model,
+                            "record_ids": record_ids
+                        })
+                    else:
+                        await websocket.send_json({
+                            "type": "error",
+                            "message": "system_id, model, and record_ids are required"
+                        })
+
+                elif message_type == "unsubscribe_model":
+                    # Unsubscribe from Odoo model updates
+                    system_id = message.get("system_id")
+                    model = message.get("model")
+                    record_ids = message.get("record_ids", [])
+
+                    if system_id and model and record_ids:
+                        await manager.unsubscribe_from_model(
+                            user_id=user_id,
+                            system_id=system_id,
+                            model=model,
+                            record_ids=record_ids
+                        )
+                        await websocket.send_json({
+                            "type": "status",
+                            "message": f"Unsubscribed from {model} records: {record_ids}",
+                            "system_id": system_id,
+                            "model": model,
+                            "record_ids": record_ids
+                        })
+                    else:
+                        await websocket.send_json({
+                            "type": "error",
+                            "message": "system_id, model, and record_ids are required"
+                        })
 
                 else:
                     await websocket.send_json({
