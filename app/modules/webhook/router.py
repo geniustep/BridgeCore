@@ -3,6 +3,7 @@ Webhook Router - REST API endpoints (v1)
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 from loguru import logger
 
@@ -17,6 +18,7 @@ from app.services.cache_service import CacheService
 from app.utils.odoo_client import OdooClient, OdooError
 from app.core.config import settings
 from app.core.dependencies import get_current_user, get_cache_service
+from app.db.session import get_db
 from app.core.rate_limiter import limiter
 from starlette.requests import Request
 
@@ -29,15 +31,115 @@ router = APIRouter(
 
 # ===== Dependencies =====
 
-def get_odoo_client(user = Depends(get_current_user)) -> OdooClient:
+async def get_odoo_client(
+    user = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+) -> OdooClient:
     """Get Odoo client with user's session"""
-    session_id = getattr(user, 'session_id', None) or getattr(user, 'odoo_session_id', None)
-
+    from app.models.system import System
+    from sqlalchemy import select
+    from app.api.routes.systems import get_system_service
+    
+    # Get user's active Odoo system (prefer most recently updated)
+    query = select(System).where(
+        System.user_id == user.id,
+        System.system_type == "odoo",
+        System.is_active == True
+    ).order_by(System.updated_at.desc()).limit(1)
+    result = await db.execute(query)
+    system = result.scalar_one_or_none()
+    
+    if not system:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No active Odoo system found for user {user.id}. Please connect to Odoo first via /systems/odoo-{user.username}/connect"
+        )
+    
+    # Get SystemService and check if adapter is connected
+    service = get_system_service(db)
+    system_id = system.system_id
+    
+    logger.debug(f"Getting Odoo client for system_id: {system_id}, user_id: {user.id}")
+    
+    # Check if adapter exists and is connected
+    adapter = service.adapters.get(system_id)
+    if not adapter or not adapter.is_connected:
+        # Try to reconnect using stored config
+        logger.info(f"Adapter not found or not connected for {system_id}, attempting to reconnect...")
+        try:
+            config = system.connection_config.copy() if system.connection_config else {}
+            # Ensure URL is correct - remove /odoo if present (Odoo is at root)
+            base_url = config.get("url", settings.ODOO_URL)
+            if base_url:
+                # Remove /odoo suffix if present
+                if base_url.endswith("/odoo") or base_url.endswith("/odoo/"):
+                    config["url"] = base_url.rstrip('/').replace('/odoo', '').rstrip('/')
+                    logger.info(f"Fixed Odoo URL: {config['url']}")
+                else:
+                    config["url"] = base_url.rstrip('/')
+            else:
+                # Use default from settings
+                default_url = settings.ODOO_URL.rstrip('/').replace('/odoo', '').rstrip('/')
+                config["url"] = default_url
+            
+            adapter = await service.connect_system(
+                system_id=system_id,
+                system_type=system.system_type,
+                config=config
+            )
+            logger.info(f"Successfully reconnected to {system_id}")
+        except Exception as e:
+            logger.error(f"Failed to reconnect to Odoo {system_id}: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Failed to connect to Odoo: {str(e)}. Please try connecting manually via /systems/{system_id}/connect"
+            )
+    
+    # Get session_id from adapter
+    session_id = getattr(adapter, 'session_id', None)
+    
+    # If no session_id, try to authenticate
+    if not session_id:
+        logger.warning(f"No session_id found for {system_id}, attempting to authenticate...")
+        try:
+            config = system.connection_config
+            username = config.get("username")
+            password = config.get("password")
+            
+            if username and password:
+                auth_result = await adapter.authenticate(username, password)
+                if auth_result.get("success"):
+                    session_id = auth_result.get("session_id")
+                    logger.info(f"Successfully authenticated and obtained session_id for {system_id}")
+                else:
+                    error_msg = auth_result.get("error", "Unknown error")
+                    logger.error(f"Authentication failed for {system_id}: {error_msg}")
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail=f"Odoo authentication failed: {error_msg}. Please check credentials and try connecting via /systems/{system_id}/connect"
+                    )
+            else:
+                logger.error(f"No credentials found in config for {system_id}")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"No credentials stored for system {system_id}. Please connect via /systems/{system_id}/connect"
+                )
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error during authentication: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Authentication error: {str(e)}. Please try connecting via /systems/{system_id}/connect"
+            )
+    
     if not session_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Odoo session not found. Please login first."
+            detail=f"Odoo session not found for system {system_id}. Please connect to Odoo first via /systems/{system_id}/connect"
         )
+
+    logger.debug(f"Using session_id: {session_id[:20]}... for system {system_id}")
 
     return OdooClient(
         base_url=settings.ODOO_URL,

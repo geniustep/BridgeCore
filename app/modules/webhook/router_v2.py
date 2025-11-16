@@ -3,6 +3,7 @@ Webhook Router V2 - Smart Sync API endpoints
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
 from loguru import logger
 
 from app.modules.webhook.service import WebhookService
@@ -15,6 +16,7 @@ from app.services.cache_service import CacheService
 from app.utils.odoo_client import OdooClient, OdooError
 from app.core.config import settings
 from app.core.dependencies import get_current_user, get_cache_service
+from app.db.session import get_db
 from app.core.rate_limiter import limiter
 from starlette.requests import Request
 
@@ -27,14 +29,79 @@ router = APIRouter(
 
 # ===== Dependencies =====
 
-def get_odoo_client(user = Depends(get_current_user)) -> OdooClient:
+async def get_odoo_client(
+    user = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+) -> OdooClient:
     """Get Odoo client with user's session"""
-    session_id = getattr(user, 'session_id', None) or getattr(user, 'odoo_session_id', None)
-
+    from app.models.system import System
+    from sqlalchemy import select
+    from app.api.routes.systems import get_system_service
+    
+    # Get user's active Odoo system (prefer most recently updated)
+    query = select(System).where(
+        System.user_id == user.id,
+        System.system_type == "odoo",
+        System.is_active == True
+    ).order_by(System.updated_at.desc()).limit(1)
+    result = await db.execute(query)
+    system = result.scalar_one_or_none()
+    
+    if not system:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No active Odoo system found. Please connect to Odoo first."
+        )
+    
+    # Get SystemService and check if adapter is connected
+    service = get_system_service(db)
+    system_id = system.system_id
+    
+    # Check if adapter exists and is connected
+    adapter = service.adapters.get(system_id)
+    if not adapter or not adapter.is_connected:
+        # Try to reconnect using stored config
+        try:
+            config = system.connection_config
+            adapter = await service.connect_system(
+                system_id=system_id,
+                system_type=system.system_type,
+                config=config
+            )
+        except Exception as e:
+            logger.error(f"Failed to connect to Odoo: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Failed to connect to Odoo: {str(e)}"
+            )
+    
+    # Get session_id from adapter
+    session_id = getattr(adapter, 'session_id', None)
+    
+    # If no session_id, try to authenticate
+    if not session_id:
+        logger.warning(f"No session_id found for {system_id}, attempting to authenticate...")
+        try:
+            config = system.connection_config
+            username = config.get("username")
+            password = config.get("password")
+            
+            if username and password:
+                auth_result = await adapter.authenticate(username, password)
+                if auth_result.get("success"):
+                    session_id = auth_result.get("session_id")
+                    logger.info(f"Successfully authenticated and obtained session_id for {system_id}")
+                else:
+                    logger.error(f"Authentication failed: {auth_result.get('error')}")
+            else:
+                logger.error(f"No credentials found in config for {system_id}")
+        except Exception as e:
+            logger.error(f"Error during authentication: {str(e)}")
+    
     if not session_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Odoo session not found. Please login first."
+            detail="Odoo session not found. Please connect to Odoo first via /systems/{system_id}/connect"
         )
 
     return OdooClient(

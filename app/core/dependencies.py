@@ -160,4 +160,5 @@ async def get_cache_service():
         CacheService instance
     """
     from app.services.cache_service import CacheService
-    return CacheService()
+    from app.core.config import settings
+    return CacheService(redis_url=settings.REDIS_URL)

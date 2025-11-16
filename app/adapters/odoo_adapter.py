@@ -92,12 +92,27 @@ class OdooAdapter(BaseAdapter):
         }
 
         try:
+            # Use URL as-is (Odoo is at root, not /odoo)
+            auth_url = self.url.rstrip('/')
+            
+            logger.debug(f"Authenticating to Odoo: {auth_url}/web/session/authenticate")
+            
             response = await self.client.post(
-                f"{self.url}/web/session/authenticate",
-                json=payload
+                f"{auth_url}/web/session/authenticate",
+                json=payload,
+                headers={"Content-Type": "application/json"}
             )
 
-            result = response.json()
+            # Check if response is JSON
+            try:
+                result = response.json()
+            except Exception as json_error:
+                logger.error(f"Odoo returned non-JSON response: {response.headers.get('content-type', 'unknown')}. Status: {response.status_code}")
+                logger.error(f"Response text: {response.text[:500]}")
+                return {
+                    "success": False,
+                    "error": f"Invalid response from Odoo: {str(json_error)}"
+                }
 
             if "result" in result and result["result"].get("uid"):
                 self.uid = result["result"]["uid"]
@@ -107,8 +122,7 @@ class OdooAdapter(BaseAdapter):
                 
                 # Log cookies for debugging
                 logger.debug(f"Odoo session cookies: {dict(response.cookies)}")
-
-                logger.info(f"Odoo authentication successful for user: {username}, uid: {self.uid}")
+                logger.info(f"Odoo authentication successful for user: {username}, uid: {self.uid}, session_id: {self.session_id[:20] if self.session_id else 'None'}...")
 
                 return {
                     "success": True,
@@ -117,9 +131,11 @@ class OdooAdapter(BaseAdapter):
                     "user_context": result["result"].get("user_context", {})
                 }
             else:
+                error_msg = result.get("error", {}).get("message", "Authentication failed") if "error" in result else "Authentication failed"
+                logger.error(f"Odoo authentication failed: {error_msg}")
                 return {
                     "success": False,
-                    "error": "Authentication failed"
+                    "error": error_msg
                 }
 
         except Exception as e:

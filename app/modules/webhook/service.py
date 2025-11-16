@@ -119,14 +119,20 @@ class WebhookService:
             domain.append(["timestamp", ">=", since])
 
         try:
-            # Fetch from Odoo
-            rows = self.odoo.search_read(
-                "update.webhook",
-                domain=domain,
-                fields=["id", "model", "record_id", "event", "timestamp"],
-                limit=limit,
-                offset=offset,
-                order="timestamp desc"
+            # Fetch from Odoo (OdooClient is sync, but we're in async context)
+            # Run in thread pool to avoid blocking
+            import asyncio
+            loop = asyncio.get_event_loop()
+            rows = await loop.run_in_executor(
+                None,
+                lambda: self.odoo.search_read(
+                    "update.webhook",
+                    domain=domain,
+                    fields=["id", "model", "record_id", "event", "timestamp"],
+                    limit=limit,
+                    offset=offset,
+                    order="timestamp desc"
+                )
             )
 
             # Transform to Pydantic models
@@ -183,14 +189,20 @@ class WebhookService:
                 f"device={sync_request.device_id}, app={sync_request.app_type}"
             )
 
-            sync_state = self.odoo.call_kw(
-                "user.sync.state",
-                "get_or_create_state",
-                [
-                    sync_request.user_id,
-                    sync_request.device_id,
-                    sync_request.app_type
-                ]
+            # Get sync state (run sync call in executor)
+            import asyncio
+            loop = asyncio.get_event_loop()
+            sync_state = await loop.run_in_executor(
+                None,
+                lambda: self.odoo.call_kw(
+                    "user.sync.state",
+                    "get_or_create_state",
+                    [
+                        sync_request.user_id,
+                        sync_request.device_id,
+                        sync_request.app_type
+                    ]
+                )
             )
 
             last_event_id = sync_state.get("last_event_id", 0)
@@ -211,13 +223,18 @@ class WebhookService:
             if sync_request.models_filter:
                 domain.append(("model", "in", sync_request.models_filter))
 
-            # Fetch new events
-            events = self.odoo.search_read(
-                "update.webhook",
-                domain=domain,
-                fields=["id", "model", "record_id", "event", "timestamp"],
-                limit=sync_request.limit,
-                order="id asc"  # Oldest first for proper sync
+            # Fetch new events (OdooClient is sync, run in executor)
+            import asyncio
+            loop = asyncio.get_event_loop()
+            events = await loop.run_in_executor(
+                None,
+                lambda: self.odoo.search_read(
+                    "update.webhook",
+                    domain=domain,
+                    fields=["id", "model", "record_id", "event", "timestamp"],
+                    limit=sync_request.limit,
+                    order="id asc"  # Oldest first for proper sync
+                )
             )
 
             if not events:
@@ -233,23 +250,29 @@ class WebhookService:
             # Update user sync state
             new_last_event_id = events[-1]["id"]
 
-            self.odoo.call_kw(
-                "user.sync.state",
-                "write",
-                [[sync_state["id"]], {
-                    "last_event_id": new_last_event_id,
-                    "last_sync_time": datetime.utcnow().isoformat(),
-                    "sync_count": sync_state.get("sync_count", 0) + 1
-                }]
+            await loop.run_in_executor(
+                None,
+                lambda: self.odoo.call_kw(
+                    "user.sync.state",
+                    "write",
+                    [[sync_state["id"]], {
+                        "last_event_id": new_last_event_id,
+                        "last_sync_time": datetime.utcnow().isoformat(),
+                        "sync_count": sync_state.get("sync_count", 0) + 1
+                    }]
+                )
             )
 
             # Mark events as synced by this user (optional, for analytics)
             for event in events:
                 try:
-                    self.odoo.call_kw(
-                        "update.webhook",
-                        "mark_as_synced_by_user",
-                        [[event["id"]], sync_request.user_id]
+                    await loop.run_in_executor(
+                        None,
+                        lambda e=event: self.odoo.call_kw(
+                            "update.webhook",
+                            "mark_as_synced_by_user",
+                            [[e["id"]], sync_request.user_id]
+                        )
                     )
                 except Exception as e:
                     # Non-critical, just log
@@ -296,17 +319,22 @@ class WebhookService:
         """Get current sync state for a user/device"""
 
         try:
-            states = self.odoo.search_read(
-                "user.sync.state",
-                domain=[
-                    ("user_id", "=", user_id),
-                    ("device_id", "=", device_id)
-                ],
-                fields=[
-                    "user_id", "device_id", "last_event_id",
-                    "last_sync_time", "sync_count", "is_active"
-                ],
-                limit=1
+            import asyncio
+            loop = asyncio.get_event_loop()
+            states = await loop.run_in_executor(
+                None,
+                lambda: self.odoo.search_read(
+                    "user.sync.state",
+                    domain=[
+                        ("user_id", "=", user_id),
+                        ("device_id", "=", device_id)
+                    ],
+                    fields=[
+                        "user_id", "device_id", "last_event_id",
+                        "last_sync_time", "sync_count", "is_active"
+                    ],
+                    limit=1
+                )
             )
 
             if not states:
@@ -337,21 +365,29 @@ class WebhookService:
         """Reset sync state for a user/device"""
 
         try:
-            states = self.odoo.search(
-                "user.sync.state",
-                domain=[
-                    ("user_id", "=", user_id),
-                    ("device_id", "=", device_id)
-                ]
+            import asyncio
+            loop = asyncio.get_event_loop()
+            states = await loop.run_in_executor(
+                None,
+                lambda: self.odoo.search(
+                    "user.sync.state",
+                    domain=[
+                        ("user_id", "=", user_id),
+                        ("device_id", "=", device_id)
+                    ]
+                )
             )
 
             if not states:
                 raise ValueError("Sync state not found")
 
-            self.odoo.write("user.sync.state", states, {
-                "last_event_id": 0,
-                "sync_count": 0
-            })
+            await loop.run_in_executor(
+                None,
+                lambda: self.odoo.write("user.sync.state", states, {
+                    "last_event_id": 0,
+                    "sync_count": 0
+                })
+            )
 
             logger.info(f"Reset sync state for user {user_id}, device {device_id}")
             return {"status": "success", "message": "Sync state reset successfully"}
@@ -374,7 +410,12 @@ class WebhookService:
         """
 
         try:
-            data = self.odoo.get_updates_summary(limit=limit, since=since)
+            import asyncio
+            loop = asyncio.get_event_loop()
+            data = await loop.run_in_executor(
+                None,
+                lambda: self.odoo.get_updates_summary(limit=limit, since=since)
+            )
 
             last_at = data.get("last_update_at")
             summary = [ModelCount(**s) for s in data.get("summary", [])]
@@ -407,7 +448,12 @@ class WebhookService:
         """
 
         try:
-            deleted = self.odoo.cleanup_updates(before=before)
+            import asyncio
+            loop = asyncio.get_event_loop()
+            deleted = await loop.run_in_executor(
+                None,
+                lambda: self.odoo.cleanup_updates(before=before)
+            )
             logger.info(f"Cleaned up {deleted} webhook events")
             return deleted
 
