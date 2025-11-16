@@ -11,7 +11,13 @@ from app.modules.webhook.schemas import (
     EventsResponse,
     WebhookEventOut,
     CheckUpdatesOut,
-    CleanupResponse
+    CleanupResponse,
+    RetryEventRequest,
+    BulkRetryRequest,
+    RetryResponse,
+    DeadLetterQueueStats,
+    EventStatistics,
+    WebhookConfigOut
 )
 from app.services.cache_service import CacheService
 from app.utils.odoo_client import OdooClient, OdooError
@@ -200,5 +206,255 @@ async def webhook_health():
     return {
         "status": "healthy",
         "service": "webhook",
-        "version": "1.0.0"
+        "version": "2.0.0",  # Updated version
+        "features": [
+            "enhanced_filtering",
+            "retry_mechanism",
+            "dead_letter_queue",
+            "statistics",
+            "priority_support"
+        ]
     }
+
+
+# ===== New Enhanced Endpoints =====
+
+@router.get(
+    "/events/enhanced",
+    response_model=EventsResponse,
+    summary="List webhook events with enhanced filtering",
+    description="Get webhook events with priority, category, status filtering"
+)
+@limiter.limit("200/minute")
+async def list_events_enhanced(
+    request: Request,
+    model_name: Optional[str] = Query(None, description="Filter by model name"),
+    record_id: Optional[int] = Query(None, description="Filter by specific record id"),
+    event: Optional[str] = Query(None, description="create|write|unlink|manual"),
+    since: Optional[str] = Query(None, description="ISO datetime to filter timestamp >= since"),
+    priority: Optional[str] = Query(None, description="high|medium|low"),
+    category: Optional[str] = Query(None, description="business|system|notification|custom"),
+    status: Optional[str] = Query(None, description="pending|processing|sent|failed|dead"),
+    limit: int = Query(100, ge=1, le=1000, description="Max events to return"),
+    offset: int = Query(0, ge=0, description="Offset for pagination"),
+    service: WebhookService = Depends(get_webhook_service)
+):
+    """
+    List webhook events with enhanced filtering
+
+    Rate limited to 200 requests/minute per user
+    """
+
+    try:
+        events = await service.get_events_enhanced(
+            model_name=model_name,
+            record_id=record_id,
+            event=event,
+            since=since,
+            priority=priority,
+            category=category,
+            status=status,
+            limit=limit,
+            offset=offset
+        )
+
+        return EventsResponse(
+            count=len(events),
+            data=events
+        )
+
+    except OdooError as e:
+        logger.error(f"Odoo error in list_events_enhanced: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Odoo error: {str(e)}"
+        )
+    except Exception as e:
+        logger.exception(f"Error in list_events_enhanced: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Server error: {str(e)}"
+        )
+
+
+@router.post(
+    "/retry",
+    response_model=RetryResponse,
+    summary="Retry failed event",
+    description="Retry a single failed webhook event"
+)
+@limiter.limit("50/minute")
+async def retry_event(
+    request: Request,
+    retry_request: RetryEventRequest,
+    service: WebhookService = Depends(get_webhook_service)
+):
+    """
+    Retry a failed webhook event
+
+    Rate limited to 50 requests/minute per user
+    """
+
+    try:
+        result = await service.retry_event(
+            event_id=retry_request.event_id,
+            force=retry_request.force
+        )
+        return result
+
+    except Exception as e:
+        logger.exception(f"Error in retry_event: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Server error: {str(e)}"
+        )
+
+
+@router.post(
+    "/retry/bulk",
+    response_model=List[RetryResponse],
+    summary="Bulk retry failed events",
+    description="Retry multiple failed webhook events"
+)
+@limiter.limit("10/minute")
+async def bulk_retry_events(
+    request: Request,
+    bulk_request: BulkRetryRequest,
+    service: WebhookService = Depends(get_webhook_service)
+):
+    """
+    Bulk retry failed webhook events
+
+    Rate limited to 10 requests/minute per user
+    Max 100 events per request
+    """
+
+    if len(bulk_request.event_ids) > 100:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Maximum 100 events can be retried at once"
+        )
+
+    try:
+        results = await service.bulk_retry_events(
+            event_ids=bulk_request.event_ids,
+            force=bulk_request.force
+        )
+        return results
+
+    except Exception as e:
+        logger.exception(f"Error in bulk_retry_events: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Server error: {str(e)}"
+        )
+
+
+@router.get(
+    "/dead-letter/stats",
+    response_model=DeadLetterQueueStats,
+    summary="Dead letter queue statistics",
+    description="Get statistics about events in dead letter queue"
+)
+@limiter.limit("30/minute")
+async def get_dead_letter_stats(
+    request: Request,
+    service: WebhookService = Depends(get_webhook_service)
+):
+    """
+    Get dead letter queue statistics
+
+    Rate limited to 30 requests/minute per user
+    """
+
+    try:
+        stats = await service.get_dead_letter_queue_stats()
+        return stats
+
+    except OdooError as e:
+        logger.error(f"Odoo error in get_dead_letter_stats: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Odoo error: {str(e)}"
+        )
+    except Exception as e:
+        logger.exception(f"Error in get_dead_letter_stats: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Server error: {str(e)}"
+        )
+
+
+@router.get(
+    "/statistics",
+    response_model=EventStatistics,
+    summary="Event statistics",
+    description="Get comprehensive webhook event statistics"
+)
+@limiter.limit("20/minute")
+async def get_statistics(
+    request: Request,
+    since: Optional[str] = Query(None, description="Get stats since this timestamp"),
+    model_name: Optional[str] = Query(None, description="Filter by model"),
+    service: WebhookService = Depends(get_webhook_service)
+):
+    """
+    Get comprehensive event statistics
+
+    Rate limited to 20 requests/minute per user
+    """
+
+    try:
+        stats = await service.get_event_statistics(
+            since=since,
+            model_name=model_name
+        )
+        return stats
+
+    except OdooError as e:
+        logger.error(f"Odoo error in get_statistics: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Odoo error: {str(e)}"
+        )
+    except Exception as e:
+        logger.exception(f"Error in get_statistics: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Server error: {str(e)}"
+        )
+
+
+@router.get(
+    "/configs",
+    response_model=List[WebhookConfigOut],
+    summary="Get webhook configurations",
+    description="Get all active webhook configurations"
+)
+@limiter.limit("30/minute")
+async def get_webhook_configs(
+    request: Request,
+    service: WebhookService = Depends(get_webhook_service)
+):
+    """
+    Get all active webhook configurations
+
+    Rate limited to 30 requests/minute per user
+    """
+
+    try:
+        configs = await service.get_webhook_configs()
+        return configs
+
+    except OdooError as e:
+        logger.error(f"Odoo error in get_webhook_configs: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Odoo error: {str(e)}"
+        )
+    except Exception as e:
+        logger.exception(f"Error in get_webhook_configs: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Server error: {str(e)}"
+        )

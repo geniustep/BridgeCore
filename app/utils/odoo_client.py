@@ -205,21 +205,29 @@ class OdooClient:
         return self.call_kw(model, "fields_get", [], {"attributes": attributes or []})
 
     # -----------------------------
-    # Utilities for update.webhook
+    # Utilities for webhook.event (enhanced webhook module)
     # -----------------------------
-    # --- inside OdooClient.get_updates_summary ---
     def get_updates_summary(self, *, limit: int = 200, since: Optional[str] = None) -> Dict[str, Any]:
+        """Get summary of webhook events with counts per model.
+
+        Args:
+            limit: Maximum number of events to retrieve
+            since: ISO datetime string to filter events >= since
+
+        Returns:
+            Dict with last_update_at, summary (counts per model), and events list
+        """
         domain: List = []
         if since:
-            domain.append(["timestamp", ">=", since])  # بدل occurred_at → timestamp
+            domain.append(["timestamp", ">=", since])
         rows = self.search_read(
-            "update.webhook",
+            "webhook.event",  # Updated model name
             domain=domain,
-            fields=["model", "record_id", "event", "timestamp"],  # هنا أيضًا
+            fields=["model", "record_id", "event", "timestamp", "priority", "category", "status"],
             limit=limit,
-            order="timestamp desc",  # هنا أيضًا
+            order="timestamp desc",
         )
-        last_at = rows[0].get("timestamp") if rows else None  # هنا أيضًا
+        last_at = rows[0].get("timestamp") if rows else None
         tally: Dict[str, int] = {}
         for r in rows:
             m = r.get("model") or "?"
@@ -227,15 +235,146 @@ class OdooClient:
         summary = [{"model": m, "count": c} for m, c in tally.items()]
         return {"last_update_at": last_at, "summary": summary, "events": rows}
 
-    # --- inside OdooClient.cleanup_updates ---
     def cleanup_updates(self, *, before: Optional[str] = None) -> int:
+        """Delete old webhook events.
+
+        Args:
+            before: ISO datetime string - delete events with timestamp <= before
+
+        Returns:
+            Number of deleted events
+        """
         domain: List = []
         if before:
-            domain.append(["timestamp", "<=", before])  # بدل occurred_at → timestamp
-        ids = self.call_kw("update.webhook", "search", [domain])
+            domain.append(["timestamp", "<=", before])
+        ids = self.call_kw("webhook.event", "search", [domain])  # Updated model name
         if not ids:
             return 0
-        return int(self.call_kw("update.webhook", "unlink", [ids])) or 0
+        return int(self.call_kw("webhook.event", "unlink", [ids])) or 0
+
+    # -----------------------------
+    # Enhanced webhook utilities
+    # -----------------------------
+    def retry_webhook_event(self, event_id: int, *, force: bool = False) -> Dict[str, Any]:
+        """Retry a failed webhook event.
+
+        Args:
+            event_id: ID of the webhook.event record to retry
+            force: If True, retry even if max_retries reached
+
+        Returns:
+            Dict with success status, message, and new status
+        """
+        try:
+            result = self.call_kw(
+                "webhook.event",
+                "retry_event",
+                [[event_id]],
+                {"force": force}
+            )
+            return result if isinstance(result, dict) else {"success": False, "message": "Invalid response"}
+        except Exception as e:
+            logger.error(f"Error retrying webhook event {event_id}: {e}")
+            return {"success": False, "message": str(e)}
+
+    def get_webhook_configs(self, *, active_only: bool = True) -> List[Dict[str, Any]]:
+        """Get all webhook configurations.
+
+        Args:
+            active_only: If True, return only active configurations
+
+        Returns:
+            List of webhook.config records
+        """
+        domain = [["active", "=", True]] if active_only else []
+        return self.search_read(
+            "webhook.config",
+            domain=domain,
+            fields=[
+                "id", "name", "model_name", "model_id", "enabled",
+                "priority", "category", "events", "batch_enabled",
+                "batch_size", "active"
+            ],
+            order="priority desc, model_name asc"
+        )
+
+    def get_dead_letter_events(self, *, limit: int = 100) -> List[Dict[str, Any]]:
+        """Get events in dead letter queue (status = 'dead').
+
+        Args:
+            limit: Maximum number of events to retrieve
+
+        Returns:
+            List of dead webhook events
+        """
+        return self.search_read(
+            "webhook.event",
+            domain=[["status", "=", "dead"]],
+            fields=[
+                "id", "model", "record_id", "event", "timestamp",
+                "priority", "category", "retry_count", "max_retries",
+                "error_message", "error_type", "error_code"
+            ],
+            limit=limit,
+            order="timestamp desc"
+        )
+
+    def get_webhook_statistics(
+        self,
+        *,
+        since: Optional[str] = None,
+        model_name: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Get comprehensive webhook event statistics.
+
+        Args:
+            since: ISO datetime string to filter events >= since
+            model_name: Filter by specific model
+
+        Returns:
+            Dict with event counts by status, priority, category
+        """
+        domain: List = []
+        if since:
+            domain.append(["timestamp", ">=", since])
+        if model_name:
+            domain.append(["model", "=", model_name])
+
+        # Get all events matching filters
+        events = self.search_read(
+            "webhook.event",
+            domain=domain,
+            fields=["status", "priority", "category", "event"],
+            limit=10000  # High limit for statistics
+        )
+
+        # Calculate statistics
+        stats: Dict[str, Any] = {
+            "total_events": len(events),
+            "by_status": {},
+            "by_priority": {},
+            "by_category": {},
+            "by_event_type": {}
+        }
+
+        for evt in events:
+            # Count by status
+            status = evt.get("status", "unknown")
+            stats["by_status"][status] = stats["by_status"].get(status, 0) + 1
+
+            # Count by priority
+            priority = evt.get("priority", "unknown")
+            stats["by_priority"][priority] = stats["by_priority"].get(priority, 0) + 1
+
+            # Count by category
+            category = evt.get("category", "unknown")
+            stats["by_category"][category] = stats["by_category"].get(category, 0) + 1
+
+            # Count by event type
+            event_type = evt.get("event", "unknown")
+            stats["by_event_type"][event_type] = stats["by_event_type"].get(event_type, 0) + 1
+
+        return stats
 
 
     # -----------------------------

@@ -13,13 +13,16 @@ from app.modules.universal_audit.classifier import ModelClassifier
 
 class UniversalAuditDetector:
     """
-    Main coordinator for universal audit system
+    Main coordinator for universal audit system - ORM-based detection
 
     This class:
     - Discovers all Odoo models
     - Classifies them by importance
-    - Sets up appropriate monitoring strategy for each
-    - Coordinates real-time change detection
+    - Manages webhook configurations in Odoo
+    - Monitors change detection via Odoo's enhanced webhook module
+
+    Note: Uses ORM-based detection through Odoo webhook module
+    (no PostgreSQL triggers required)
     """
 
     def __init__(self, odoo_client: OdooClient):
@@ -31,17 +34,17 @@ class UniversalAuditDetector:
 
     async def initialize(self) -> int:
         """
-        Initialize the universal audit system
+        Initialize the universal audit system (ORM-based)
 
         Returns:
-            Number of models discovered
+            Number of models discovered and configured
         """
 
         if self.initialized:
             logger.warning("Universal audit detector already initialized")
             return len(self.monitored_models)
 
-        logger.info("Initializing Universal Audit Detector...")
+        logger.info("Initializing Universal Audit Detector (ORM-based)...")
 
         try:
             # 1. Discover all models
@@ -52,9 +55,13 @@ class UniversalAuditDetector:
             logger.info("Step 2: Classifying models by importance...")
             classifications = self.classifier.classify_models(models)
 
-            # 3. Setup monitoring for each model
-            logger.info("Step 3: Setting up monitoring strategies...")
-            await self._setup_monitoring(classifications)
+            # 3. Setup webhook configs in Odoo
+            logger.info("Step 3: Setting up webhook configurations in Odoo...")
+            await self._setup_webhook_configs(classifications)
+
+            # 4. Verify webhook module installation
+            logger.info("Step 4: Verifying Odoo webhook module...")
+            await self._verify_webhook_module()
 
             self.initialized = True
 
@@ -62,6 +69,7 @@ class UniversalAuditDetector:
             summary = self.classifier.get_summary()
             logger.info("=" * 60)
             logger.info("Universal Audit Detector Initialized Successfully")
+            logger.info("Detection Method: ORM-based (via Odoo webhook module)")
             logger.info("=" * 60)
             logger.info(f"Total models discovered: {len(models)}")
             logger.info(f"Critical models: {summary.get('critical', 0)}")
@@ -69,6 +77,7 @@ class UniversalAuditDetector:
             logger.info(f"Standard models: {summary.get('standard', 0)}")
             logger.info(f"Transient models: {summary.get('transient', 0)}")
             logger.info(f"Ignored models: {summary.get('ignored', 0)}")
+            logger.info(f"Webhook configs created: {len(self.monitored_models)}")
             logger.info("=" * 60)
 
             return len(models)
@@ -77,25 +86,126 @@ class UniversalAuditDetector:
             logger.error(f"Error initializing Universal Audit Detector: {e}")
             raise
 
-    async def _setup_monitoring(
+    async def _setup_webhook_configs(
         self,
         classifications: Dict[str, List[str]]
     ) -> None:
-        """Setup monitoring for classified models"""
+        """
+        Setup webhook configurations in Odoo for classified models
+        Creates or updates webhook.config records in Odoo
+        """
 
         for category, models in classifications.items():
             if category in ["transient", "ignored"]:
                 continue
 
             for model_name in models:
-                config = self.classifier.get_monitoring_config(model_name)
-                self.monitored_models[model_name] = {
-                    "classification": category,
-                    "config": config,
-                    "enabled": True
-                }
+                try:
+                    # Get monitoring config
+                    config = self.classifier.get_monitoring_config(model_name)
 
-        logger.info(f"Monitoring configured for {len(self.monitored_models)} models")
+                    # Check if config already exists in Odoo
+                    existing_configs = self.odoo.search_read(
+                        "webhook.config",
+                        domain=[["model_name", "=", model_name]],
+                        fields=["id"],
+                        limit=1
+                    )
+
+                    config_data = {
+                        "name": f"{model_name} Webhook Config",
+                        "model_name": model_name,
+                        "enabled": True,
+                        "priority": config.get("priority", "medium"),
+                        "category": category if category in ["business", "system"] else "business",
+                        "events": ["create", "write", "unlink"],
+                        "batch_enabled": category != "critical",  # Critical models: no batch
+                        "batch_size": 50 if category != "critical" else None,
+                        "active": True
+                    }
+
+                    if existing_configs:
+                        # Update existing config
+                        config_id = existing_configs[0]["id"]
+                        self.odoo.write("webhook.config", [config_id], config_data)
+                        logger.debug(f"Updated webhook config for {model_name}")
+                    else:
+                        # Create new config
+                        # Get model_id first
+                        model_recs = self.odoo.search_read(
+                            "ir.model",
+                            domain=[["model", "=", model_name]],
+                            fields=["id"],
+                            limit=1
+                        )
+
+                        if model_recs:
+                            config_data["model_id"] = model_recs[0]["id"]
+                            config_id = self.odoo.create("webhook.config", config_data)
+                            logger.debug(f"Created webhook config for {model_name}")
+                        else:
+                            logger.warning(f"Model {model_name} not found in ir.model, skipping")
+                            continue
+
+                    # Store locally
+                    self.monitored_models[model_name] = {
+                        "classification": category,
+                        "config": config,
+                        "enabled": True,
+                        "odoo_config_id": config_id if isinstance(config_id, int) else existing_configs[0]["id"]
+                    }
+
+                except Exception as e:
+                    logger.error(f"Error setting up webhook config for {model_name}: {e}")
+                    continue
+
+        logger.info(f"Webhook configs set up for {len(self.monitored_models)} models")
+
+    async def _verify_webhook_module(self) -> bool:
+        """
+        Verify that the enhanced webhook module is installed in Odoo
+
+        Returns:
+            True if module is installed, False otherwise
+        """
+
+        try:
+            # Check if webhook.event model exists
+            webhook_models = self.odoo.search_read(
+                "ir.model",
+                domain=[["model", "=", "webhook.event"]],
+                fields=["id", "name"],
+                limit=1
+            )
+
+            if not webhook_models:
+                logger.error(
+                    "Enhanced webhook module not installed in Odoo! "
+                    "Please install the auto-webhook-odoo module first."
+                )
+                return False
+
+            # Check if webhook.config model exists
+            config_models = self.odoo.search_read(
+                "ir.model",
+                domain=[["model", "=", "webhook.config"]],
+                fields=["id", "name"],
+                limit=1
+            )
+
+            if not config_models:
+                logger.warning(
+                    "webhook.config model not found - module may be outdated. "
+                    "Please update to the latest version."
+                )
+                return False
+
+            logger.info("✓ Enhanced webhook module verified successfully")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error verifying webhook module: {e}")
+            return False
 
     async def get_recent_changes(
         self,
@@ -119,9 +229,9 @@ class UniversalAuditDetector:
                 domain.append(["model", "=", model_name])
 
             changes = self.odoo.search_read(
-                "update.webhook",
+                "webhook.event",  # Updated model name
                 domain=domain,
-                fields=["id", "model", "record_id", "event", "timestamp"],
+                fields=["id", "model", "record_id", "event", "timestamp", "priority", "status"],
                 limit=limit,
                 order="timestamp desc"
             )
@@ -138,14 +248,17 @@ class UniversalAuditDetector:
         try:
             # Get total events count
             all_events = self.odoo.search(
-                "update.webhook",
+                "webhook.event",  # Updated model name
                 domain=[],
                 limit=1
             )
             total_events = len(all_events)
 
-            # Get events by model
-            events_summary = self.odoo.get_updates_summary(limit=1000)
+            # Get events by model (if method exists)
+            try:
+                events_summary = self.odoo.get_updates_summary(limit=1000)
+            except:
+                events_summary = {"summary": [], "last_update_at": None}
 
             return {
                 "initialized": self.initialized,

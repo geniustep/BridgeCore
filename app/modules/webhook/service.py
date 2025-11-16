@@ -15,7 +15,11 @@ from app.modules.webhook.schemas import (
     SyncResponse,
     SyncStatsResponse,
     CheckUpdatesOut,
-    ModelCount
+    ModelCount,
+    RetryResponse,
+    DeadLetterQueueStats,
+    EventStatistics,
+    WebhookConfigOut
 )
 
 
@@ -416,4 +420,384 @@ class WebhookService:
             raise
         except Exception as e:
             logger.error(f"Error during cleanup: {e}")
+            raise
+
+    # ===== New Methods for Enhanced Features =====
+
+    async def get_events_enhanced(
+        self,
+        model_name: Optional[str] = None,
+        record_id: Optional[int] = None,
+        event: Optional[str] = None,
+        since: Optional[str] = None,
+        priority: Optional[str] = None,
+        category: Optional[str] = None,
+        status: Optional[str] = None,
+        limit: int = 100,
+        offset: int = 0
+    ) -> List[WebhookEventOut]:
+        """
+        Get webhook events with enhanced filtering including new fields
+
+        Args:
+            model_name: Filter by model name
+            record_id: Filter by record ID
+            event: Filter by event type
+            since: Filter by timestamp
+            priority: Filter by priority (high/medium/low)
+            category: Filter by category (business/system/notification/custom)
+            status: Filter by status (pending/processing/sent/failed/dead)
+            limit: Max number of events
+            offset: Pagination offset
+
+        Returns:
+            List of webhook events with full details
+        """
+
+        # Build cache key with new filters
+        cache_key = f"webhook:events:v2:{model_name}:{record_id}:{event}:{since}:{priority}:{category}:{status}:{limit}:{offset}"
+
+        # Try cache
+        try:
+            cached = await self.cache.get(cache_key)
+            if cached:
+                logger.debug(f"Cache hit for enhanced events query")
+                return [WebhookEventOut(**event) for event in cached]
+        except Exception as e:
+            logger.warning(f"Cache retrieval failed: {e}")
+
+        # Build domain
+        domain = []
+        if model_name:
+            domain.append(["model", "=", model_name])
+        if record_id is not None:
+            domain.append(["record_id", "=", record_id])
+        if event:
+            domain.append(["event", "=", event])
+        if since:
+            domain.append(["timestamp", ">=", since])
+        if priority:
+            domain.append(["priority", "=", priority])
+        if category:
+            domain.append(["category", "=", category])
+        if status:
+            domain.append(["status", "=", status])
+
+        # Extended fields list
+        fields = [
+            "id", "model", "record_id", "event", "timestamp",
+            "priority", "category", "status",
+            "retry_count", "max_retries", "next_retry_at",
+            "error_message", "error_type", "error_code",
+            "changed_fields", "payload",
+            "subscriber_id", "template_id", "config_id",
+            "sent_at", "response_code", "processing_time",
+            "is_archived"
+        ]
+
+        try:
+            rows = self.odoo.search_read(
+                "webhook.event",  # Updated model name
+                domain=domain,
+                fields=fields,
+                limit=limit,
+                offset=offset,
+                order="timestamp desc"
+            )
+
+            events = [
+                WebhookEventOut(
+                    id=r["id"],
+                    model=r.get("model", ""),
+                    record_id=r.get("record_id", 0),
+                    event=r.get("event", "manual"),
+                    occurred_at=r.get("timestamp", ""),
+                    priority=r.get("priority", "medium"),
+                    category=r.get("category", "business"),
+                    status=r.get("status", "pending"),
+                    retry_count=r.get("retry_count", 0),
+                    max_retries=r.get("max_retries", 5),
+                    next_retry_at=r.get("next_retry_at"),
+                    error_message=r.get("error_message"),
+                    error_type=r.get("error_type"),
+                    error_code=r.get("error_code"),
+                    changed_fields=r.get("changed_fields"),
+                    payload=r.get("payload"),
+                    subscriber_id=r.get("subscriber_id"),
+                    template_id=r.get("template_id"),
+                    config_id=r.get("config_id"),
+                    sent_at=r.get("sent_at"),
+                    response_code=r.get("response_code"),
+                    processing_time=r.get("processing_time"),
+                    is_archived=r.get("is_archived", False)
+                )
+                for r in rows
+            ]
+
+            # Cache for 30 seconds (shorter TTL for detailed data)
+            try:
+                await self.cache.set(
+                    cache_key,
+                    [event.dict() for event in events],
+                    ttl=30
+                )
+            except Exception as e:
+                logger.warning(f"Cache storage failed: {e}")
+
+            logger.info(f"Retrieved {len(events)} enhanced webhook events")
+            return events
+
+        except OdooError as e:
+            logger.error(f"Odoo error while fetching enhanced events: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error while fetching enhanced events: {e}")
+            raise
+
+    async def retry_event(
+        self,
+        event_id: int,
+        force: bool = False
+    ) -> RetryResponse:
+        """
+        Retry a failed webhook event
+
+        Args:
+            event_id: Event ID to retry
+            force: Force retry even if max_retries reached
+
+        Returns:
+            RetryResponse with operation result
+        """
+
+        try:
+            # Call Odoo method to retry
+            result = self.odoo.call_kw(
+                "webhook.event",
+                "retry_event",
+                [[event_id]],
+                {"force": force}
+            )
+
+            return RetryResponse(
+                success=result.get("success", False),
+                event_id=event_id,
+                message=result.get("message", ""),
+                new_status=result.get("new_status", "unknown")
+            )
+
+        except OdooError as e:
+            logger.error(f"Odoo error retrying event {event_id}: {e}")
+            return RetryResponse(
+                success=False,
+                event_id=event_id,
+                message=f"Error: {str(e)}",
+                new_status="failed"
+            )
+        except Exception as e:
+            logger.error(f"Error retrying event {event_id}: {e}")
+            return RetryResponse(
+                success=False,
+                event_id=event_id,
+                message=f"Unexpected error: {str(e)}",
+                new_status="failed"
+            )
+
+    async def bulk_retry_events(
+        self,
+        event_ids: List[int],
+        force: bool = False
+    ) -> List[RetryResponse]:
+        """
+        Retry multiple failed events
+
+        Args:
+            event_ids: List of event IDs to retry
+            force: Force retry even if max_retries reached
+
+        Returns:
+            List of RetryResponse for each event
+        """
+
+        results = []
+        for event_id in event_ids:
+            result = await self.retry_event(event_id, force)
+            results.append(result)
+
+        logger.info(f"Bulk retry completed: {len(results)} events processed")
+        return results
+
+    async def get_dead_letter_queue_stats(self) -> DeadLetterQueueStats:
+        """
+        Get statistics about dead letter queue
+
+        Returns:
+            DeadLetterQueueStats with summary information
+        """
+
+        try:
+            # Get dead letter events
+            dead_events = self.odoo.search_read(
+                "webhook.event",
+                domain=[["status", "=", "dead"]],
+                fields=["id", "model", "timestamp"],
+                limit=10000
+            )
+
+            # Count by model
+            model_counts = {}
+            for event in dead_events:
+                model = event.get("model", "unknown")
+                model_counts[model] = model_counts.get(model, 0) + 1
+
+            # Get oldest and newest
+            timestamps = [e.get("timestamp") for e in dead_events if e.get("timestamp")]
+            oldest = min(timestamps) if timestamps else None
+            newest = max(timestamps) if timestamps else None
+
+            return DeadLetterQueueStats(
+                total_events=len(dead_events),
+                by_model=[
+                    ModelCount(model=model, count=count)
+                    for model, count in model_counts.items()
+                ],
+                oldest_event=oldest,
+                newest_event=newest
+            )
+
+        except OdooError as e:
+            logger.error(f"Odoo error getting dead letter stats: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Error getting dead letter stats: {e}")
+            raise
+
+    async def get_event_statistics(
+        self,
+        since: Optional[str] = None,
+        model_name: Optional[str] = None
+    ) -> EventStatistics:
+        """
+        Get comprehensive event statistics
+
+        Args:
+            since: Get stats since this timestamp
+            model_name: Filter by specific model
+
+        Returns:
+            EventStatistics with detailed metrics
+        """
+
+        try:
+            domain = []
+            if since:
+                domain.append(["timestamp", ">=", since])
+            if model_name:
+                domain.append(["model", "=", model_name])
+
+            # Get all events matching criteria
+            events = self.odoo.search_read(
+                "webhook.event",
+                domain=domain,
+                fields=["status", "priority", "category", "model", "processing_time"],
+                limit=10000
+            )
+
+            # Calculate stats
+            total = len(events)
+            by_status = {}
+            by_priority = {}
+            by_category = {}
+            model_counts = {}
+            processing_times = []
+
+            for event in events:
+                status = event.get("status", "unknown")
+                priority = event.get("priority", "unknown")
+                category = event.get("category", "unknown")
+                model = event.get("model", "unknown")
+                proc_time = event.get("processing_time")
+
+                by_status[status] = by_status.get(status, 0) + 1
+                by_priority[priority] = by_priority.get(priority, 0) + 1
+                by_category[category] = by_category.get(category, 0) + 1
+                model_counts[model] = model_counts.get(model, 0) + 1
+
+                if proc_time:
+                    processing_times.append(proc_time)
+
+            # Calculate success rate
+            sent_count = by_status.get("sent", 0)
+            success_rate = (sent_count / total * 100) if total > 0 else 0.0
+
+            # Calculate average processing time
+            avg_processing_time = (
+                sum(processing_times) / len(processing_times)
+                if processing_times else 0.0
+            )
+
+            return EventStatistics(
+                total_events=total,
+                by_status=by_status,
+                by_priority=by_priority,
+                by_category=by_category,
+                by_model=[
+                    ModelCount(model=model, count=count)
+                    for model, count in sorted(
+                        model_counts.items(),
+                        key=lambda x: x[1],
+                        reverse=True
+                    )[:10]  # Top 10 models
+                ],
+                success_rate=success_rate,
+                average_processing_time=avg_processing_time
+            )
+
+        except OdooError as e:
+            logger.error(f"Odoo error getting statistics: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Error getting statistics: {e}")
+            raise
+
+    async def get_webhook_configs(self) -> List[WebhookConfigOut]:
+        """
+        Get all webhook configurations
+
+        Returns:
+            List of webhook configurations
+        """
+
+        try:
+            configs = self.odoo.search_read(
+                "webhook.config",
+                domain=[["active", "=", True]],
+                fields=[
+                    "id", "name", "model_name", "enabled",
+                    "priority", "category", "events",
+                    "batch_enabled", "batch_size"
+                ],
+                limit=1000
+            )
+
+            return [
+                WebhookConfigOut(
+                    id=c["id"],
+                    name=c.get("name", ""),
+                    model_name=c.get("model_name", ""),
+                    enabled=c.get("enabled", False),
+                    priority=c.get("priority", "medium"),
+                    category=c.get("category", "business"),
+                    events=c.get("events", []),
+                    batch_enabled=c.get("batch_enabled", False),
+                    batch_size=c.get("batch_size")
+                )
+                for c in configs
+            ]
+
+        except OdooError as e:
+            logger.error(f"Odoo error getting configs: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Error getting configs: {e}")
             raise
