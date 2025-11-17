@@ -149,8 +149,9 @@ BridgeCore is an enterprise-grade middleware API that serves as a unified interf
               ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                      Odoo ERP System                         │
-│  - Enhanced Webhook Module (ORM-based detection)            │
+│  - auto-webhook-odoo module (Enterprise-Grade Webhook)      │
 │  - update.webhook model (stores all change events)         │
+│  - webhook.event model (for push-based delivery)          │
 │  - user.sync.state (tracks sync state per user/device)      │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -523,7 +524,22 @@ The system automatically filters events based on app type:
 
 ### Odoo Webhook Module Setup
 
-BridgeCore requires the `update.webhook` model in Odoo. See `docs/WEBHOOK_INTEGRATION_README.md` for detailed setup instructions.
+BridgeCore requires the **auto-webhook-odoo** module (v2.1.0+) in Odoo, which provides:
+- ✅ `update.webhook` model (for pull-based access)
+- ✅ `webhook.event` model (for push-based delivery)
+- ✅ `user.sync.state` model (for smart sync)
+
+**Installation:**
+```bash
+# Clone auto-webhook-odoo
+git clone https://github.com/geniustep/auto-webhook-odoo.git
+cp -r auto-webhook-odoo /path/to/odoo/addons/auto_webhook
+
+# In Odoo:
+# Apps → Update Apps List → Install "Auto Webhook - Enterprise Grade"
+```
+
+See `AUTO_WEBHOOK_ODOO_UPDATE.md` and `INTEGRATION_GUIDE.md` for detailed setup instructions.
 
 ---
 
@@ -735,10 +751,12 @@ Grafana dashboards are available in `monitoring/grafana/dashboards/`:
 **Problem**: `check-updates` returns no events
 
 **Solution**:
-- Verify `update.webhook` model exists in Odoo
-- Check Odoo webhook module is installed
-- Ensure webhook triggers are active
-- Verify Odoo connection is established
+- Verify **auto-webhook-odoo** module (v2.1.0+) is installed in Odoo
+- Check `update.webhook` model exists in Odoo
+- Ensure webhook configs are enabled in Odoo
+- Verify webhook triggers are active
+- Check Odoo connection is established
+- Review Odoo logs for webhook errors
 
 #### 3. Authentication Errors
 

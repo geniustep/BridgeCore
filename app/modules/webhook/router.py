@@ -2,9 +2,9 @@
 Webhook Router - REST API endpoints (v1)
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status, Header
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Optional
+from typing import Optional, List
 from loguru import logger
 
 from app.modules.webhook.service import WebhookService
@@ -18,7 +18,9 @@ from app.modules.webhook.schemas import (
     RetryResponse,
     DeadLetterQueueStats,
     EventStatistics,
-    WebhookConfigOut
+    WebhookConfigOut,
+    WebhookReceivePayload,
+    WebhookReceiveResponse
 )
 from app.services.cache_service import CacheService
 from app.utils.odoo_client import OdooClient, OdooError
@@ -559,4 +561,127 @@ async def get_webhook_configs(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Server error: {str(e)}"
+        )
+
+
+# ===== Push Webhook Endpoint =====
+
+async def verify_webhook_auth(
+    authorization: Optional[str] = Header(None),
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key")
+) -> bool:
+    """
+    Verify webhook authentication (Bearer Token or API Key)
+    
+    Args:
+        authorization: Bearer token from Authorization header
+        x_api_key: API key from X-API-Key header
+    
+    Returns:
+        True if authenticated
+    
+    Raises:
+        HTTPException: If authentication fails
+    """
+    # Check for Bearer Token
+    if authorization:
+        if authorization.startswith("Bearer "):
+            token = authorization.replace("Bearer ", "")
+            # Verify token (can use same JWT verification or custom logic)
+            try:
+                from app.core.security import decode_token
+                payload = decode_token(token)
+                if payload:
+                    logger.debug("Webhook authenticated via Bearer token")
+                    return True
+            except Exception as e:
+                logger.debug(f"Bearer token verification failed: {e}")
+    
+    # Check for API Key
+    if x_api_key:
+        if settings.WEBHOOK_PUSH_API_KEY and x_api_key == settings.WEBHOOK_PUSH_API_KEY:
+            logger.debug("Webhook authenticated via API Key")
+            return True
+        elif not settings.WEBHOOK_PUSH_API_KEY:
+            logger.warning("API Key provided but WEBHOOK_PUSH_API_KEY not configured")
+    
+    # No valid authentication found
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Authentication required. Provide Bearer Token or X-API-Key header.",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+@router.post(
+    "/receive",
+    response_model=WebhookReceiveResponse,
+    summary="Receive webhook from Odoo",
+    description="Receive push-based webhook events from auto-webhook-odoo (for critical events only)"
+)
+@limiter.limit("200/minute")
+async def receive_webhook(
+    request: Request,
+    payload: WebhookReceivePayload,
+    _: bool = Depends(verify_webhook_auth),
+    cache_service: CacheService = Depends(get_cache_service)
+):
+    """
+    Receive webhook event from Odoo (Push-based)
+    
+    This endpoint receives webhook events pushed from auto-webhook-odoo
+    for critical events (priority=high) only.
+    
+    Authentication:
+    - Bearer Token: Authorization: Bearer {token}
+    - API Key: X-API-Key: {api_key}
+    
+    Rate limited to 200 requests/minute
+    
+    Note: Normal events are handled via Pull-based (update.webhook).
+    This endpoint is for real-time critical events only.
+    """
+    
+    try:
+        logger.info(
+            f"Received webhook push: {payload.model}:{payload.record_id} "
+            f"({payload.event}), priority={payload.priority}"
+        )
+        
+        # Create a minimal OdooClient for service (not used for push, but required)
+        # We'll use a dummy client since we're just receiving, not querying Odoo
+        from app.utils.odoo_client import OdooClient
+        dummy_client = OdooClient(
+            base_url=settings.ODOO_URL,
+            session_id=None,
+            timeout=5
+        )
+        
+        service = WebhookService(dummy_client, cache_service)
+        
+        # Process webhook
+        result = await service.receive_webhook(payload.dict())
+        
+        logger.info(
+            f"Webhook processed successfully: {payload.model}:{payload.record_id}"
+        )
+        
+        return WebhookReceiveResponse(
+            success=result["success"],
+            message=result["message"],
+            event_id=result.get("event_id"),
+            processed_at=result.get("processed_at")
+        )
+        
+    except ValueError as e:
+        logger.error(f"Invalid webhook payload: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid payload: {str(e)}"
+        )
+    except Exception as e:
+        logger.exception(f"Error processing webhook: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error processing webhook: {str(e)}"
         )

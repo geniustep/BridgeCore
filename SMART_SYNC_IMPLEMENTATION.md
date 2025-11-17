@@ -9,14 +9,14 @@
 ## ✅ ما تم إنجازه
 
 ### 1. **Odoo Addon - user.sync.state** ✅
-📁 `odoo_addons/user_sync_state/`
+📁 **يوجد في auto-webhook-odoo** (الإصدار 2.1.0+)
 
-**الملفات:**
-- `__manifest__.py` - وصف الإضافة
-- `models/user_sync_state.py` - نموذج تتبع حالة المزامنة
-- `views/user_sync_state_views.xml` - واجهة Odoo
-- `security/ir.model.access.csv` - صلاحيات الوصول
-- `README.md` - توثيق التثبيت والاستخدام
+**ملاحظة:** BridgeCore لا يحتوي على `odoo_addons` بعد الآن. استخدم **auto-webhook-odoo** الذي يحتوي على `user.sync.state`.
+
+**الموقع:**
+- `auto-webhook-odoo/models/user_sync_state.py`
+- `auto-webhook-odoo/views/user_sync_state_views.xml`
+- `auto-webhook-odoo/security/ir.model.access.csv`
 
 **المميزات:**
 - ✅ تتبع حالة المزامنة لكل مستخدم/جهاز
@@ -205,18 +205,9 @@ BridgeCore/
 │   │   └── cache_service.py                ← موجود
 │   └── utils/
 │       └── odoo_client.py                  ← محسّن
-├── odoo_addons/
-│   └── user_sync_state/                    ← جديد
-│       ├── __init__.py
-│       ├── __manifest__.py
-│       ├── models/
-│       │   ├── __init__.py
-│       │   └── user_sync_state.py
-│       ├── security/
-│       │   └── ir.model.access.csv
-│       ├── views/
-│       │   └── user_sync_state_views.xml
-│       └── README.md
+└── (لا يوجد odoo_addons - استخدم auto-webhook-odoo)
+    └── auto-webhook-odoo/                  ← يحتوي على user.sync.state
+        └── models/user_sync_state.py
 ├── tests/unit/
 │   └── test_smart_sync.py                  ← جديد
 ├── examples/
@@ -236,12 +227,12 @@ BridgeCore/
 
 ```bash
 # نسخ الإضافة إلى مجلد addons في Odoo
-cp -r odoo_addons/user_sync_state /path/to/odoo/addons/
+cp -r /opt/auto-webhook-odoo /path/to/odoo/addons/auto_webhook
 
 # في Odoo:
 # - Apps → Update Apps List
-# - ابحث عن "User Sync State"
-# - اضغط Install
+# - ابحث عن "Auto Webhook - Enterprise Grade"
+# - اضغط Install (يحتوي على user.sync.state)
 ```
 
 ### 2. تشغيل BridgeCore API
@@ -339,7 +330,7 @@ syncService.startBackgroundSync();
 ## 📖 الوثائق المتاحة
 
 1. **SYNC_ARCHITECTURE.md** - توثيق معماري شامل
-2. **user_sync_state/README.md** - دليل Odoo addon
+2. **AUTO_WEBHOOK_ODOO_UPDATE.md** - دليل auto-webhook-odoo (يحتوي على user.sync.state)
 3. **examples/README.md** - أمثلة الاستخدام
 4. **README.md** (الرئيسي) - نظرة عامة على BridgeCore
 

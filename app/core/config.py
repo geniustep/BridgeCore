@@ -69,6 +69,13 @@ class Settings(BaseSettings):
     # Monitoring
     SENTRY_DSN: Optional[str] = Field(default=None, env="SENTRY_DSN")
 
+    # Webhook Push Authentication
+    WEBHOOK_PUSH_API_KEY: Optional[str] = Field(
+        default=None,
+        env="WEBHOOK_PUSH_API_KEY",
+        description="API Key for webhook push authentication (optional, can use Bearer Token instead)"
+    )
+
     # Celery
     CELERY_BROKER_URL: str = Field(
         default="redis://localhost:6379/1",

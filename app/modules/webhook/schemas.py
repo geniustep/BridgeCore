@@ -230,3 +230,31 @@ class PerformanceMetrics(BaseModel):
     p95_latency_ms: float
     p99_latency_ms: float
     error_rate: float
+
+
+# ===== Push Webhook Schemas =====
+
+class WebhookReceivePayload(BaseModel):
+    """Payload received from Odoo webhook push"""
+    event_id: Optional[int] = None
+    model: str = Field(..., description="Model name (e.g., sale.order)")
+    record_id: int = Field(..., description="Record ID")
+    event: Literal["create", "write", "unlink"] = Field(..., description="Event type")
+    timestamp: Optional[str] = Field(None, description="ISO datetime string")
+    priority: Optional[Literal["high", "medium", "low"]] = "medium"
+    category: Optional[Literal["business", "system", "notification", "custom"]] = "business"
+    payload: Optional[dict] = Field(None, description="Full event data")
+    changed_fields: Optional[List[str]] = None
+    user_id: Optional[int] = None
+    user_name: Optional[str] = None
+    
+    # Metadata from auto-webhook-odoo
+    _webhook_metadata: Optional[dict] = None
+
+
+class WebhookReceiveResponse(BaseModel):
+    """Response for webhook receive endpoint"""
+    success: bool
+    message: str
+    event_id: Optional[int] = None
+    processed_at: Optional[str] = None

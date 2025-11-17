@@ -131,7 +131,7 @@ Tracks synchronization state for each user/device combination.
 - `update_sync_state(last_event_id, event_count)`: Update after successful sync
 - `reset_sync_state()`: Reset to force full sync
 
-**Location:** `odoo_addons/user_sync_state/`
+**Location:** `auto-webhook-odoo/models/user_sync_state.py` (الإصدار 2.1.0+)
 
 ### 2. WebhookService (BridgeCore)
 

@@ -847,3 +847,74 @@ class WebhookService:
         except Exception as e:
             logger.error(f"Error getting configs: {e}")
             raise
+
+    # ===== Push Webhook Methods =====
+
+    async def receive_webhook(
+        self,
+        payload: dict
+    ) -> Dict[str, Any]:
+        """
+        Receive webhook event from Odoo (Push-based)
+
+        This method receives webhook events pushed from auto-webhook-odoo
+        and processes them immediately.
+
+        Args:
+            payload: Webhook payload from Odoo
+
+        Returns:
+            Dict with processing result
+        """
+        try:
+            # Extract event data
+            model = payload.get("model")
+            record_id = payload.get("record_id")
+            event_type = payload.get("event")
+            priority = payload.get("priority", "medium")
+            timestamp = payload.get("timestamp") or payload.get("_webhook_metadata", {}).get("timestamp")
+            
+            logger.info(
+                f"Received webhook push: {model}:{record_id} ({event_type}), "
+                f"priority={priority}"
+            )
+
+            # Validate required fields
+            if not model or record_id is None or not event_type:
+                raise ValueError("Missing required fields: model, record_id, or event")
+
+            # Extract event ID if available
+            event_metadata = payload.get("_webhook_metadata", {})
+            odoo_event_id = event_metadata.get("event_id") or payload.get("event_id")
+            
+            # Note: auto-webhook-odoo already stores the event in update.webhook
+            # We don't need to do anything here - the event is already available for Pull-based access
+            # This Push endpoint is just for real-time notification of critical events
+
+            # Process critical events immediately
+            if priority == "high":
+                logger.info(f"Processing high-priority event: {model}:{record_id}")
+                # Here you can add immediate processing logic:
+                # - Send notifications
+                # - Update cache
+                # - Trigger WebSocket broadcast
+                # - etc.
+
+            # Return success response
+            return {
+                "success": True,
+                "message": "Webhook received and processed",
+                "event_id": odoo_event_id,
+                "processed_at": datetime.utcnow().isoformat(),
+                "model": model,
+                "record_id": record_id,
+                "event": event_type,
+                "priority": priority
+            }
+
+        except ValueError as e:
+            logger.error(f"Invalid webhook payload: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Error processing webhook: {e}")
+            raise
