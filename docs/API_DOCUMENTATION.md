@@ -266,20 +266,66 @@ Content-Type: application/json
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/v1/auth/login` | User login |
+| POST | `/api/v1/auth/tenant/login` | Tenant user login (NEW) |
+| POST | `/api/v1/auth/login` | Legacy login (deprecated) |
 | POST | `/api/v1/auth/logout` | User logout |
 | POST | `/api/v1/auth/refresh` | Refresh token |
 | GET | `/api/v1/auth/me` | Get current user |
 
+**Note:** The new tenant-based authentication endpoint `/api/v1/auth/tenant/login` is recommended. The legacy `/api/v1/auth/login` endpoint is deprecated and will be removed in a future version.
+
+#### Tenant User Login (NEW)
+
+```bash
+POST /api/v1/auth/tenant/login
+Content-Type: application/json
+
+{
+    "email": "user@company.com",
+    "password": "password123"
+}
+```
+
+**Response:**
+```json
+{
+    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "token_type": "bearer",
+    "expires_in": 1800,
+    "user": {
+        "id": "uuid",
+        "email": "user@company.com",
+        "full_name": "User Name",
+        "role": "user"
+    },
+    "tenant": {
+        "id": "uuid",
+        "name": "Company Name",
+        "slug": "company-slug",
+        "status": "active"
+    }
+}
+```
+
 ### Odoo Operations
+
+**Important:** All Odoo operations use tenant JWT tokens. Odoo credentials are automatically fetched from tenant database - **NO credentials needed in requests!**
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | POST | `/api/v1/odoo/search_read` | Search and read records |
+| POST | `/api/v1/odoo/read` | Read specific records by IDs |
 | POST | `/api/v1/odoo/create` | Create record |
 | POST | `/api/v1/odoo/write` | Update records |
 | POST | `/api/v1/odoo/unlink` | Delete records |
-| POST | `/api/v1/odoo/execute` | Execute custom method |
+| POST | `/api/v1/odoo/search_count` | Count matching records |
+| POST | `/api/v1/odoo/search` | Search for record IDs only |
+| POST | `/api/v1/odoo/fields_get` | Get model field definitions |
+| POST | `/api/v1/odoo/call_kw` | Call any Odoo method |
+| GET | `/api/v1/odoo/models` | List available models |
+| GET | `/api/v1/odoo/cache/stats` | Get cache statistics |
+| DELETE | `/api/v1/odoo/cache/clear` | Clear cache |
 
 #### Search and Read
 
