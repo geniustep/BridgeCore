@@ -16,10 +16,10 @@ export const authService = {
     });
 
     try {
-      const response = await apiClient.post<LoginResponse>(
-        API_ENDPOINTS.LOGIN,
-        credentials
-      );
+    const response = await apiClient.post<LoginResponse>(
+      API_ENDPOINTS.LOGIN,
+      credentials
+    );
 
       console.log('[AUTH] Login success:', {
         status: response.status,
@@ -28,13 +28,13 @@ export const authService = {
         timestamp: new Date().toISOString()
       });
 
-      // Save token and admin info
-      if (response.data.token) {
-        localStorage.setItem(STORAGE_KEYS.TOKEN, response.data.token);
-        localStorage.setItem(STORAGE_KEYS.ADMIN, JSON.stringify(response.data.admin));
-      }
+    // Save token and admin info
+    if (response.data.token) {
+      localStorage.setItem(STORAGE_KEYS.TOKEN, response.data.token);
+      localStorage.setItem(STORAGE_KEYS.ADMIN, JSON.stringify(response.data.admin));
+    }
 
-      return response.data;
+    return response.data;
     } catch (error: any) {
       console.error('[AUTH] Login error:', {
         message: error.message,

@@ -348,6 +348,9 @@ daily_key = f"rate_limit:tenant:{tenant_id}:day:{current_day}"
 
 ## API Reference
 
+> 📖 **Complete API Documentation**: See [API_DOCUMENTATION.md](API_DOCUMENTATION.md)  
+> 🔄 **Migration Guide**: See [MIGRATION_GUIDE.md](MIGRATION_GUIDE.md) for migrating from legacy API
+
 ### Admin API Endpoints
 
 #### Authentication
@@ -447,32 +450,46 @@ POST /admin/logs/errors/{error_id}/resolve
 
 ### Tenant API Endpoints
 
+> 📖 **Full API Documentation**: See [API_DOCUMENTATION.md](API_DOCUMENTATION.md) for complete reference
+
 #### Authentication
 ```bash
-# Login
-POST /api/v1/auth/login
+# Tenant User Login
+POST /api/v1/auth/tenant/login
 {
-    "username": "user@company.com",
-    "password": "password",
-    "database": "company_db"
+    "email": "user@company.com",
+    "password": "password123"
 }
 
 # Response
 {
     "access_token": "eyJ...",
     "refresh_token": "eyJ...",
+    "token_type": "bearer",
+    "expires_in": 1800,
     "user": {
-        "id": 1,
-        "username": "user@company.com",
-        "name": "User Name"
+        "id": "uuid",
+        "email": "user@company.com",
+        "full_name": "User Name",
+        "role": "user"
+    },
+    "tenant": {
+        "id": "uuid",
+        "name": "Company Name",
+        "slug": "company-slug",
+        "status": "active"
     }
 }
 ```
 
 #### Odoo Operations
+
+**🔐 Security**: All Odoo operations use tenant JWT tokens. Odoo credentials are automatically fetched from tenant database - **NO credentials needed in requests!**
+
 ```bash
 # Search & Read
 POST /api/v1/odoo/search_read
+Authorization: Bearer {tenant_token}
 {
     "model": "res.partner",
     "domain": [["customer_rank", ">", 0]],
@@ -482,6 +499,7 @@ POST /api/v1/odoo/search_read
 
 # Create
 POST /api/v1/odoo/create
+Authorization: Bearer {tenant_token}
 {
     "model": "res.partner",
     "values": {
@@ -492,6 +510,7 @@ POST /api/v1/odoo/create
 
 # Update
 POST /api/v1/odoo/write
+Authorization: Bearer {tenant_token}
 {
     "model": "res.partner",
     "ids": [1, 2, 3],
@@ -502,11 +521,17 @@ POST /api/v1/odoo/write
 
 # Delete
 POST /api/v1/odoo/unlink
+Authorization: Bearer {tenant_token}
 {
     "model": "res.partner",
     "ids": [1, 2, 3]
 }
 ```
+
+**Key Changes:**
+- ✅ **No `system_id` in URL** - Tenant extracted from JWT token
+- ✅ **No Odoo credentials** - Automatically fetched from tenant database
+- ✅ **Tenant-based** - All operations use tenant context from token
 
 ---
 
@@ -791,6 +816,33 @@ BridgeCore/
 ├── requirements.txt
 └── README.md
 ```
+
+---
+
+## Migration Guide
+
+> 🔄 **Migrating from Legacy API?** See [MIGRATION_GUIDE.md](MIGRATION_GUIDE.md) for step-by-step instructions.
+
+### Quick Migration Summary
+
+**Old API (Deprecated):**
+```bash
+POST /api/v1/auth/login
+POST /api/v1/systems/{system_id}/odoo/{operation}
+```
+
+**New API (Tenant-Based):**
+```bash
+POST /api/v1/auth/tenant/login
+POST /api/v1/odoo/{operation}
+```
+
+**Key Changes:**
+- ✅ No `system_id` in URL - Tenant extracted from JWT token
+- ✅ No Odoo credentials in requests - Fetched automatically from database
+- ✅ Tenant context - All operations use tenant from token
+
+See [MIGRATION_GUIDE.md](MIGRATION_GUIDE.md) for complete migration instructions with code examples.
 
 ---
 

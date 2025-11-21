@@ -42,7 +42,7 @@ ODOO_VERSION_RULES = {
             }
         },
 
-        # Odoo 17 -> 18
+        # Odoo 17 -> 18 
         "17.0_to_18.0": {
             "phone": {
                 "rename_to": "phone_primary"

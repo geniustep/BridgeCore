@@ -1,7 +1,8 @@
 """
-Odoo Operations API routes - Flutter Compatible
+Odoo Operations API routes - Tenant-Based
 
-Unified endpoint for all Odoo operations with caching and optimization
+This file has been modified to use tenant information from JWT token.
+Tenant credentials are automatically fetched from database, not passed in request.
 """
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -14,13 +15,16 @@ import time
 from app.db.session import get_db
 from app.core.dependencies import get_current_user
 from app.models.user import User
+from app.models.tenant import Tenant
 from app.services.cache_service import CacheService
 from app.services.query_optimizer import query_optimizer
 from app.core.monitoring import record_cache_hit, record_cache_miss, record_api_operation
 from app.core.config import settings
 from app.api.routes.websocket import manager as ws_manager
+from app.core.encryption import encryption_service
+from app.adapters.odoo_adapter import OdooAdapter
 
-router = APIRouter(prefix="/api/v1/systems", tags=["Odoo Operations"])
+router = APIRouter(prefix="/api/v1/odoo", tags=["Odoo Operations"])
 security = HTTPBearer()
 
 # Initialize cache service
@@ -28,7 +32,7 @@ cache_service = CacheService(settings.REDIS_URL)
 
 
 class OdooOperationRequest(BaseModel):
-    """Request model for Odoo operations"""
+    """Request model for Odoo operations - NO Odoo credentials needed!"""
     model: str
     domain: Optional[List] = []
     fields: Optional[List[str]] = None
@@ -44,25 +48,44 @@ class OdooOperationRequest(BaseModel):
     kwargs: Optional[Dict[str, Any]] = None
 
 
-@router.post("/{system_id}/odoo/{operation}")
+def decrypt_password(encrypted_password: str) -> str:
+    """
+    Decrypt Odoo password from database using encryption_service
+    
+    Args:
+        encrypted_password: Encrypted password from database
+        
+    Returns:
+        Decrypted password string
+    """
+    try:
+        return encryption_service.decrypt_value(encrypted_password)
+    except Exception as e:
+        logger.error(f"Failed to decrypt password: {str(e)}")
+        # Fallback: try to use as-is (might be plain text from old records)
+        logger.warning("Using password as-is (might be plain text or hash)")
+        return encrypted_password
+
+
+@router.post("/{operation}")
 async def execute_odoo_operation(
-    system_id: str,
     operation: str,
+    request: Request,
     request_data: Dict[str, Any],
-    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Execute any Odoo operation through unified endpoint (Flutter compatible)
+    Execute any Odoo operation - Tenant-based (NO credentials required in request!)
 
-    This endpoint provides a unified interface for all Odoo RPC operations
-    with automatic caching and query optimization.
+    🔐 SECURITY: This endpoint uses tenant info from JWT token automatically.
+    User does NOT send Odoo credentials - they are fetched from tenant database.
 
-    Features:
-    - Redis caching for read operations (10x faster responses)
-    - Query optimization to prevent N+1 queries
-    - Automatic cache invalidation on writes
-    - Prometheus metrics tracking
+    How it works:
+    1. Middleware extracts tenant_id from JWT
+    2. Middleware validates tenant status (active/suspended/deleted)
+    3. Middleware attaches tenant object to request.state
+    4. This endpoint uses tenant.odoo_url, tenant.odoo_database, etc.
+    5. User only sends operation-specific data (model, domain, fields, etc.)
 
     Supported operations:
     - search_read: Search and read records
@@ -78,32 +101,55 @@ async def execute_odoo_operation(
     - fields_get: Get model fields information
 
     Args:
-        system_id: System identifier (e.g., "odoo-prod")
         operation: Operation name
-        request_data: Operation-specific data
-        current_user: Current authenticated user
+        request: FastAPI request (contains tenant in state)
+        request_data: Operation-specific data (NO Odoo credentials!)
         db: Database session
 
     Returns:
         {
             "result": [...] or {...} or int or bool,
             "cached": bool (optional),
-            "optimized": bool (optional)
+            "optimized": bool (optional),
+            "tenant_id": str (for debugging)
         }
 
-    Example:
-        POST /api/v1/systems/odoo-prod/odoo/search_read
+    Example Request:
+        POST /api/v1/odoo/search_read
+        Authorization: Bearer <tenant_jwt>
         {
-            "model": "product.product",
-            "domain": [],
-            "fields": ["id", "name", "price"],
+            "model": "res.partner",
+            "domain": [["is_company", "=", true]],
+            "fields": ["name", "email", "phone"],
             "limit": 10
         }
 
+    Example Response:
+        {
+            "result": [
+                {"id": 1, "name": "Company A", "email": "info@a.com", "phone": "+123"},
+                {"id": 2, "name": "Company B", "email": "info@b.com", "phone": "+456"}
+            ],
+            "cached": false,
+            "tenant_id": "550e8400-e29b-41d4-a716-446655440000"
+        }
+
     Raises:
-        HTTPException: If operation fails or is invalid
+        HTTPException: If operation fails or tenant not found
     """
     start_time = time.time()
+
+    # 🔐 Get tenant from request state (set by middleware)
+    tenant: Tenant = getattr(request.state, 'tenant', None)
+    
+    if not tenant:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Tenant information not found. Are you using a valid tenant token?"
+        )
+
+    tenant_id = str(tenant.id)
+    user_id = getattr(request.state, 'user_id', None)
 
     # Validate operation
     valid_operations = [
@@ -120,14 +166,18 @@ async def execute_odoo_operation(
         )
 
     model = request_data.get('model', 'N/A')
+    
     logger.info(
-        f"User {current_user.username} executing {operation} on {system_id} "
-        f"for model {model}"
+        f"Tenant {tenant.name} (ID: {tenant_id}) executing {operation} "
+        f"on model {model}"
     )
 
     try:
         cached = False
         optimized = False
+
+        # Generate system_id for this tenant (for cache keys)
+        system_id = f"tenant-{tenant_id}"
 
         # Check if operation should be cached
         if query_optimizer.should_cache(operation):
@@ -146,7 +196,7 @@ async def execute_odoo_operation(
             # Try to get from cache
             cached_result = await cache_service.get(cache_key)
             if cached_result is not None:
-                logger.info(f"Cache HIT for {operation} on {model}")
+                logger.info(f"Cache HIT for {operation} on {model} (tenant: {tenant.name})")
                 record_cache_hit(operation)
 
                 # Record metrics
@@ -155,7 +205,8 @@ async def execute_odoo_operation(
 
                 return {
                     "result": cached_result,
-                    "cached": True
+                    "cached": True,
+                    "tenant_id": tenant_id
                 }
 
             logger.debug(f"Cache MISS for {operation} on {model}")
@@ -192,12 +243,12 @@ async def execute_odoo_operation(
             if not request_data.get('order'):
                 request_data['order'] = query_optimizer.optimize_order(None, model)
 
-        # Execute operation
-        result = await execute_operation_impl(
-            system_id=system_id,
+        # 🔐 Execute operation with tenant's Odoo credentials
+        result = await execute_operation_with_tenant(
+            tenant=tenant,
             operation=operation,
             data=request_data,
-            user_id=current_user.id
+            user_id=user_id
         )
 
         # Cache the result if applicable
@@ -262,7 +313,10 @@ async def execute_odoo_operation(
         duration = time.time() - start_time
         record_api_operation("odoo", model, operation, duration, True)
 
-        response = {"result": result}
+        response = {
+            "result": result,
+            "tenant_id": tenant_id
+        }
         if cached:
             response["cached"] = True
         if optimized:
@@ -280,7 +334,7 @@ async def execute_odoo_operation(
             detail=str(e)
         )
     except Exception as e:
-        logger.error(f"Operation {operation} failed: {str(e)}")
+        logger.error(f"Operation {operation} failed for tenant {tenant.name}: {str(e)}")
         duration = time.time() - start_time
         record_api_operation("odoo", model, operation, duration, False)
 
@@ -290,20 +344,20 @@ async def execute_odoo_operation(
         )
 
 
-async def execute_operation_impl(
-    system_id: str,
+async def execute_operation_with_tenant(
+    tenant: Tenant,
     operation: str,
     data: Dict[str, Any],
-    user_id: int
+    user_id: Optional[str] = None
 ) -> Any:
     """
-    Implementation of Odoo operations
+    Execute Odoo operation using tenant's credentials
 
-    This is a mock implementation. In production, replace with actual
-    Odoo RPC calls using xmlrpc or jsonrpc.
+    This function connects to the tenant's Odoo instance using credentials
+    stored in the tenant database record.
 
     Args:
-        system_id: System identifier
+        tenant: Tenant object with Odoo connection info
         operation: Operation name
         data: Operation data
         user_id: User ID for audit
@@ -311,214 +365,260 @@ async def execute_operation_impl(
     Returns:
         Operation result
     """
+    
+    # 🔐 Extract tenant's Odoo credentials
+    odoo_url = tenant.odoo_url
+    odoo_database = tenant.odoo_database
+    odoo_username = tenant.odoo_username
+    odoo_password = decrypt_password(tenant.odoo_password)
+    
+    logger.info(
+        f"[ODOO OPERATION] Connecting to Odoo: {odoo_url}, DB: {odoo_database}, "
+        f"User: {odoo_username}, Operation: {operation}"
+    )
 
-    # TODO: Replace with actual Odoo adapter/connector
-    # Example: adapter = get_odoo_adapter(system_id)
-    # return await adapter.execute(operation, data)
-
+    # Create OdooAdapter with tenant credentials
+    odoo_config = {
+        "url": odoo_url,
+        "database": odoo_database,
+        "username": odoo_username,
+        "password": odoo_password,
+        "context": {}
+    }
+    
+    adapter = OdooAdapter(odoo_config)
+    
+    # Authenticate with Odoo
+    auth_result = await adapter.authenticate(odoo_username, odoo_password)
+    if not auth_result.get("success"):
+        error_msg = auth_result.get("error", "Authentication failed")
+        logger.error(f"[ODOO OPERATION] Authentication failed: {error_msg}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Odoo authentication failed: {error_msg}"
+        )
+    
+    logger.info(f"[ODOO OPERATION] Authenticated successfully - UID: {auth_result.get('uid')}")
+    
+    # Execute operation using OdooAdapter
     model = data.get("model")
     if not model and operation not in ["call_kw"]:
         raise ValueError("Model is required for this operation")
 
-    # Mock implementations for each operation
-    if operation == "search_read":
-        # Return mock records
-        domain = data.get("domain", [])
-        fields = data.get("fields")
-        limit = data.get("limit", 80)
-        offset = data.get("offset", 0)
+    try:
+        # Execute operations using OdooAdapter
+        if operation == "search_read":
+            result = await adapter.search_read(
+                model=model,
+                domain=data.get("domain", []),
+                fields=data.get("fields"),
+                limit=data.get("limit", 80),
+                offset=data.get("offset", 0),
+                order=data.get("order")
+            )
+            return result
 
-        logger.debug(
-            f"search_read: model={model}, domain={domain}, "
-            f"fields={fields}, limit={limit}, offset={offset}"
-        )
+        elif operation == "read":
+            ids = data.get("ids", [])
+            if not ids:
+                raise ValueError("ids are required for read operation")
+            
+            # Use search_read with domain to get specific records
+            result = await adapter.search_read(
+                model=model,
+                domain=[["id", "in", ids]],
+                fields=data.get("fields"),
+                limit=len(ids)
+            )
+            return result
 
-        return [
-            {
-                "id": i + offset + 1,
-                "name": f"Mock {model} {i + offset + 1}",
-                "display_name": f"Mock Record {i + offset + 1}",
-            }
-            for i in range(min(limit, 10))
-        ]
+        elif operation == "create":
+            values = data.get("values", {})
+            if not values:
+                raise ValueError("values are required for create operation")
+            
+            result = await adapter.create(
+                model=model,
+                values=values
+            )
+            return result
 
-    elif operation == "read":
-        # Return mock records by IDs
-        ids = data.get("ids", [])
-        fields = data.get("fields")
+        elif operation == "write":
+            ids = data.get("ids", [])
+            values = data.get("values", {})
+            
+            if not ids:
+                raise ValueError("ids are required for write operation")
+            if not values:
+                raise ValueError("values are required for write operation")
+            
+            # Write each record
+            for record_id in ids:
+                await adapter.write(
+                    model=model,
+                    record_id=record_id,
+                    values=values
+                )
+            return True
 
-        logger.debug(f"read: model={model}, ids={ids}, fields={fields}")
+        elif operation == "unlink":
+            ids = data.get("ids", [])
+            if not ids:
+                raise ValueError("ids are required for unlink operation")
+            
+            result = await adapter.unlink(
+                model=model,
+                record_ids=ids
+            )
+            return result
 
-        return [
-            {
-                "id": record_id,
-                "name": f"Mock {model} {record_id}",
-                "display_name": f"Mock Record {record_id}",
-            }
-            for record_id in ids
-        ]
+        elif operation == "search_count":
+            domain = data.get("domain", [])
+            # Use search_read and count results
+            result = await adapter.search_read(
+                model=model,
+                domain=domain,
+                fields=["id"],
+                limit=10000  # Large limit to get count
+            )
+            return len(result) if isinstance(result, list) else 0
 
-    elif operation == "create":
-        # Return mock created ID
-        values = data.get("values", {})
+        elif operation == "search":
+            domain = data.get("domain", [])
+            limit = data.get("limit", 80)
+            offset = data.get("offset", 0)
+            
+            # Use search_read to get IDs
+            result = await adapter.search_read(
+                model=model,
+                domain=domain,
+                fields=["id"],
+                limit=limit,
+                offset=offset
+            )
+            # Extract IDs
+            return [record.get("id") for record in result if record.get("id")]
 
-        logger.debug(f"create: model={model}, values={values}")
+        elif operation == "fields_get":
+            fields = data.get("fields")
+            result = await adapter.get_metadata(model=model)
+            
+            # Filter fields if specified
+            if fields:
+                result = {k: v for k, v in result.items() if k in fields}
+            
+            return result
 
-        # Return the new record ID
-        return 123
+        elif operation == "name_search":
+            name = data.get("name", "")
+            domain = data.get("domain", [])
+            limit = data.get("limit", 100)
+            
+            result = await adapter.name_search(
+                model=model,
+                name=name,
+                domain=domain,
+                limit=limit
+            )
+            return result
 
-    elif operation == "write":
-        # Return success
-        ids = data.get("ids", [])
-        values = data.get("values", {})
-
-        logger.debug(f"write: model={model}, ids={ids}, values={values}")
-
-        return True
-
-    elif operation == "unlink":
-        # Return success
-        ids = data.get("ids", [])
-
-        logger.debug(f"unlink: model={model}, ids={ids}")
-
-        return True
-
-    elif operation == "search_count":
-        # Return mock count
-        domain = data.get("domain", [])
-
-        logger.debug(f"search_count: model={model}, domain={domain}")
-
-        return 42
-
-    elif operation == "search":
-        # Return mock IDs
-        domain = data.get("domain", [])
-        limit = data.get("limit", 80)
-        offset = data.get("offset", 0)
-
-        logger.debug(
-            f"search: model={model}, domain={domain}, "
-            f"limit={limit}, offset={offset}"
-        )
-
-        return list(range(offset + 1, offset + limit + 1))
-
-    elif operation == "fields_get":
-        # Return mock fields
-        fields = data.get("fields")
-
-        logger.debug(f"fields_get: model={model}, fields={fields}")
-
-        return {
-            "id": {
-                "type": "integer",
-                "string": "ID",
-                "readonly": True
-            },
-            "name": {
-                "type": "char",
-                "string": "Name",
-                "required": True
-            },
-            "display_name": {
-                "type": "char",
-                "string": "Display Name",
-                "readonly": True
-            },
-        }
-
-    elif operation == "name_search":
-        # Return mock name search results
-        name = data.get("name", "")
-        domain = data.get("domain", [])
-        limit = data.get("limit", 100)
-
-        logger.debug(
-            f"name_search: model={model}, name={name}, "
-            f"domain={domain}, limit={limit}"
-        )
-
-        return [
-            (i + 1, f"Mock {model} {i + 1}")
-            for i in range(min(limit, 10))
-        ]
-
-    elif operation == "name_get":
-        # Return mock name get results
-        ids = data.get("ids", [])
-
-        logger.debug(f"name_get: model={model}, ids={ids}")
-
-        return [
-            (record_id, f"Mock {model} {record_id}")
-            for record_id in ids
-        ]
-
-    elif operation in ["web_search_read", "web_read", "web_save"]:
-        # Return mock data for web methods (Odoo 14+)
-        specification = data.get("specification", {})
-
-        logger.debug(
-            f"{operation}: model={model}, "
-            f"specification={specification}"
-        )
-
-        if operation == "web_search_read":
-            return {
-                "records": [
-                    {
-                        "id": i + 1,
-                        "name": f"Mock {model} {i + 1}",
-                    }
-                    for i in range(10)
-                ],
-                "length": 10,
-            }
-        elif operation == "web_read":
+        elif operation == "name_get":
+            ids = data.get("ids", [])
+            if not ids:
+                raise ValueError("ids are required for name_get operation")
+            
+            # Use search_read to get names
+            result = await adapter.search_read(
+                model=model,
+                domain=[["id", "in", ids]],
+                fields=["id", "name", "display_name"],
+                limit=len(ids)
+            )
+            # Format as (id, name) tuples
             return [
-                {
-                    "id": 1,
-                    "name": f"Mock {model} 1",
-                }
+                (record.get("id"), record.get("display_name") or record.get("name", ""))
+                for record in result
             ]
-        else:  # web_save
-            return [123]
 
-    elif operation == "call_kw":
-        # Call any Odoo method
-        method = data.get("method")
-        args = data.get("args", [])
-        kwargs = data.get("kwargs", {})
+        elif operation in ["web_search_read", "web_read", "web_save"]:
+            # These are Odoo 14+ web methods - use call_kw
+            specification = data.get("specification", {})
+            
+            if operation == "web_search_read":
+                result = await adapter.call_method(
+                    model=model,
+                    method="web_search_read",
+                    kwargs=specification
+                )
+                return result
+            elif operation == "web_read":
+                result = await adapter.call_method(
+                    model=model,
+                    method="web_read",
+                    kwargs=specification
+                )
+                return result
+            else:  # web_save
+                result = await adapter.call_method(
+                    model=model,
+                    method="web_save",
+                    kwargs=specification
+                )
+                return result
 
-        logger.debug(
-            f"call_kw: model={model}, method={method}, "
-            f"args={args}, kwargs={kwargs}"
-        )
+        elif operation == "call_kw":
+            method = data.get("method")
+            args = data.get("args", [])
+            kwargs = data.get("kwargs", {})
+            
+            if not method:
+                raise ValueError("method is required for call_kw operation")
+            
+            result = await adapter.call_method(
+                model=model,
+                method=method,
+                args=args,
+                kwargs=kwargs
+            )
+            return result
 
-        return {"success": True, "method": method}
+        else:
+            raise ValueError(f"Operation {operation} not implemented")
+    
+    except Exception as e:
+        logger.error(f"[ODOO OPERATION] Error executing {operation}: {str(e)}")
+        raise
+    
+    finally:
+        # Clean up adapter connection
+        try:
+            await adapter.disconnect()
+        except Exception as e:
+            logger.warning(f"Error disconnecting adapter: {str(e)}")
 
-    else:
-        raise ValueError(f"Operation {operation} not implemented")
 
-
-@router.get("/{system_id}/odoo/models")
+@router.get("/models")
 async def list_odoo_models(
-    system_id: str,
-    current_user: User = Depends(get_current_user)
+    request: Request
 ):
     """
-    List available Odoo models (optional helper endpoint)
+    List available Odoo models for current tenant
 
     Args:
-        system_id: System identifier
-        current_user: Current authenticated user
+        request: FastAPI request (contains tenant in state)
 
     Returns:
         List of available models
     """
-    # TODO: Get actual models from Odoo
+    tenant: Tenant = getattr(request.state, 'tenant', None)
+    
+    if not tenant:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Tenant information not found"
+        )
+
+    # TODO: Get actual models from tenant's Odoo instance
     # This would typically call ir.model.search_read()
 
     return {
@@ -528,27 +628,37 @@ async def list_odoo_models(
             {"model": "sale.order", "name": "Sales Order"},
             {"model": "account.move", "name": "Invoice"},
             {"model": "stock.picking", "name": "Transfer"},
-        ]
+        ],
+        "tenant_id": str(tenant.id),
+        "tenant_name": tenant.name
     }
 
 
-@router.get("/{system_id}/cache/stats")
+@router.get("/cache/stats")
 async def get_cache_stats(
-    system_id: str,
-    current_user: User = Depends(get_current_user)
+    request: Request
 ):
     """
-    Get cache statistics for a system
+    Get cache statistics for current tenant
 
     Args:
-        system_id: System identifier
-        current_user: Current authenticated user
+        request: FastAPI request (contains tenant in state)
 
     Returns:
-        Cache statistics including hit rate, total keys, etc.
+        Cache statistics
     """
+    tenant: Tenant = getattr(request.state, 'tenant', None)
+    
+    if not tenant:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Tenant information not found"
+        )
+
+    tenant_id = str(tenant.id)
+    system_id = f"tenant-{tenant_id}"
+
     try:
-        # Get Redis info
         redis_client = cache_service.redis_client
 
         # Get info stats
@@ -561,21 +671,19 @@ async def get_cache_stats(
         total = hits + misses
         hit_rate = (hits / total * 100) if total > 0 else 0
 
-        # Count keys for this system
+        # Count keys for this tenant
         pattern = f"odoo:{system_id}:*"
         keys = await redis_client.keys(pattern)
-        system_keys_count = len(keys) if keys else 0
+        tenant_keys_count = len(keys) if keys else 0
 
         return {
-            "system_id": system_id,
+            "tenant_id": tenant_id,
+            "tenant_name": tenant.name,
             "cache_stats": {
-                "total_keys": system_keys_count,
+                "total_keys": tenant_keys_count,
                 "hit_rate_percent": round(hit_rate, 2),
                 "total_hits": hits,
                 "total_misses": misses,
-                "total_commands": int(info.get("total_commands_processed", 0)),
-                "total_connections": int(info.get("total_connections_received", 0)),
-                "keyspace_info": keyspace
             }
         }
 
@@ -587,40 +695,48 @@ async def get_cache_stats(
         )
 
 
-@router.delete("/{system_id}/cache/clear")
+@router.delete("/cache/clear")
 async def clear_cache(
-    system_id: str,
-    model: Optional[str] = None,
-    current_user: User = Depends(get_current_user)
+    request: Request,
+    model: Optional[str] = None
 ):
     """
-    Clear cache for a system or specific model
+    Clear cache for current tenant or specific model
 
     Args:
-        system_id: System identifier
+        request: FastAPI request (contains tenant in state)
         model: Optional model name to clear cache for
-        current_user: Current authenticated user
 
     Returns:
         Number of keys deleted
     """
+    tenant: Tenant = getattr(request.state, 'tenant', None)
+    
+    if not tenant:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Tenant information not found"
+        )
+
+    tenant_id = str(tenant.id)
+    system_id = f"tenant-{tenant_id}"
+
     try:
         if model:
-            # Clear cache for specific model
             pattern = f"odoo:{system_id}:*:{model}:*"
         else:
-            # Clear all cache for system
             pattern = f"odoo:{system_id}:*"
 
         deleted_count = await cache_service.delete_pattern(pattern)
 
         logger.info(
-            f"User {current_user.username} cleared {deleted_count} cache entries "
-            f"for system {system_id}" + (f" model {model}" if model else "")
+            f"Tenant {tenant.name} cleared {deleted_count} cache entries" +
+            (f" for model {model}" if model else "")
         )
 
         return {
-            "system_id": system_id,
+            "tenant_id": tenant_id,
+            "tenant_name": tenant.name,
             "model": model,
             "deleted_keys": deleted_count,
             "message": f"Cleared {deleted_count} cache entries"
