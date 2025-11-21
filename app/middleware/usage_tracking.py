@@ -32,6 +32,10 @@ class UsageTrackingMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        # Skip tracking for OPTIONS requests (CORS preflight)
+        if request.method == "OPTIONS":
+            return await call_next(request)
+        
         # Skip tracking for health checks, metrics, and admin routes
         skip_paths = ["/health", "/metrics", "/docs", "/redoc", "/openapi.json", "/admin"]
         if any(request.url.path.startswith(path) for path in skip_paths):

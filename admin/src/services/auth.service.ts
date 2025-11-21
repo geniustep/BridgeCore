@@ -8,18 +8,45 @@ export const authService = {
    * Login admin user
    */
   async login(credentials: LoginRequest): Promise<LoginResponse> {
-    const response = await apiClient.post<LoginResponse>(
-      API_ENDPOINTS.LOGIN,
-      credentials
-    );
+    console.log('[AUTH] Login attempt:', {
+      email: credentials.email,
+      endpoint: API_ENDPOINTS.LOGIN,
+      baseURL: apiClient.defaults.baseURL,
+      timestamp: new Date().toISOString()
+    });
 
-    // Save token and admin info
-    if (response.data.token) {
-      localStorage.setItem(STORAGE_KEYS.TOKEN, response.data.token);
-      localStorage.setItem(STORAGE_KEYS.ADMIN, JSON.stringify(response.data.admin));
+    try {
+      const response = await apiClient.post<LoginResponse>(
+        API_ENDPOINTS.LOGIN,
+        credentials
+      );
+
+      console.log('[AUTH] Login success:', {
+        status: response.status,
+        hasToken: !!response.data.token,
+        adminEmail: response.data.admin?.email,
+        timestamp: new Date().toISOString()
+      });
+
+      // Save token and admin info
+      if (response.data.token) {
+        localStorage.setItem(STORAGE_KEYS.TOKEN, response.data.token);
+        localStorage.setItem(STORAGE_KEYS.ADMIN, JSON.stringify(response.data.admin));
+      }
+
+      return response.data;
+    } catch (error: any) {
+      console.error('[AUTH] Login error:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        requestURL: error.config?.url,
+        requestData: error.config?.data,
+        timestamp: new Date().toISOString()
+      });
+      throw error;
     }
-
-    return response.data;
   },
 
   /**

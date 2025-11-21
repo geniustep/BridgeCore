@@ -10,7 +10,7 @@ import httpx
 from app.repositories.tenant_repository import TenantRepository
 from app.repositories.plan_repository import PlanRepository
 from app.models.tenant import Tenant, TenantStatus
-from app.core.security import get_password_hash
+from app.core.encryption import encryption_service
 from fastapi import HTTPException, status
 
 
@@ -72,6 +72,9 @@ class TenantService:
             )
 
         # Create tenant
+        # Encrypt password for storage (can be decrypted when needed for Odoo)
+        encrypted_password = encryption_service.encrypt_value(odoo_password)
+        
         tenant = Tenant(
             name=name,
             slug=slug,
@@ -79,7 +82,7 @@ class TenantService:
             odoo_url=odoo_url,
             odoo_database=odoo_database,
             odoo_username=odoo_username,
-            odoo_password=get_password_hash(odoo_password),  # Encrypt password
+            odoo_password=encrypted_password,  # Encrypted for storage
             plan_id=plan_id,
             status=TenantStatus.TRIAL,
             created_by=created_by,
@@ -169,7 +172,7 @@ class TenantService:
 
         # Encrypt password if updating
         if "odoo_password" in data:
-            data["odoo_password"] = get_password_hash(data["odoo_password"])
+            data["odoo_password"] = encryption_service.encrypt_value(data["odoo_password"])
 
         # Update fields
         for key, value in data.items():
@@ -237,17 +240,27 @@ class TenantService:
 
     async def test_odoo_connection(self, tenant_id: UUID) -> Dict[str, Any]:
         """
-        Test Odoo connection for a tenant
+        Test Odoo connection for a tenant with full authentication and database verification
 
         Args:
             tenant_id: Tenant UUID
 
         Returns:
-            Dictionary with connection test results
+            Dictionary with detailed connection test results including:
+            - success: Boolean indicating if connection is successful
+            - message: Human-readable message
+            - url: Odoo URL tested
+            - database: Database name
+            - version: Odoo version (if available)
+            - user_info: User information (if authentication successful)
+            - details: Additional connection details
 
         Raises:
             HTTPException: If tenant not found
         """
+        from loguru import logger
+        from app.adapters.odoo_adapter import OdooAdapter
+        
         tenant = await self.tenant_repo.get_by_id_uuid(tenant_id)
         if not tenant:
             raise HTTPException(
@@ -255,42 +268,201 @@ class TenantService:
                 detail="Tenant not found"
             )
 
-        try:
-            # Test connection by calling Odoo's version endpoint
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.get(f"{tenant.odoo_url}/web/database/selector")
+        result = {
+            "success": False,
+            "message": "",
+            "url": tenant.odoo_url,
+            "database": tenant.odoo_database,
+            "version": None,
+            "user_info": None,
+            "details": {}
+        }
 
-                if response.status_code == 200:
-                    return {
-                        "success": True,
-                        "message": "Odoo instance is reachable",
-                        "url": tenant.odoo_url
+        try:
+            # Use OdooAdapter for proper authentication (same as /api/v1/auth/login)
+            # Decrypt password for Odoo authentication
+            try:
+                decrypted_password = encryption_service.decrypt_value(tenant.odoo_password)
+                logger.info(f"[TEST CONNECTION] Password decrypted successfully")
+            except Exception as decrypt_error:
+                # If decryption fails, try using as-is (might be plain text from old records or hash)
+                logger.warning(f"[TEST CONNECTION] Password decryption failed, using as-is: {str(decrypt_error)}")
+                decrypted_password = tenant.odoo_password
+            
+            odoo_config = {
+                "url": tenant.odoo_url,
+                "database": tenant.odoo_database,
+                "username": tenant.odoo_username,
+                "password": decrypted_password  # Use decrypted password
+            }
+            
+            adapter = OdooAdapter(odoo_config)
+            
+            # Step 1: Test basic connection first
+            try:
+                import httpx
+                async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+                    # Try to reach Odoo
+                    test_url = f"{tenant.odoo_url.rstrip('/')}/web"
+                    try:
+                        test_response = await client.get(test_url, timeout=10.0)
+                        if test_response.status_code in [200, 301, 302, 303, 307, 308]:
+                            result["details"]["connection_reachable"] = True
+                            logger.info(f"Odoo instance is reachable: {tenant.odoo_url}")
+                        else:
+                            result["details"]["connection_reachable"] = False
+                            logger.warning(f"Odoo returned status {test_response.status_code}")
+                    except httpx.TimeoutException:
+                        result["details"]["connection_reachable"] = False
+                        result["success"] = False
+                        result["message"] = "Connection test failed: Timeout - Odoo server is not responding. Please check the URL and network connectivity."
+                        result["details"]["timeout"] = True
+                        return result
+                    except httpx.RequestError as e:
+                        result["details"]["connection_reachable"] = False
+                        result["success"] = False
+                        result["message"] = f"Connection test failed: Cannot reach Odoo instance - {str(e)}. Please check the URL: {tenant.odoo_url}"
+                        result["details"]["connection_error"] = str(e)
+                        return result
+            except Exception as conn_error:
+                logger.warning(f"Connection test warning: {str(conn_error)}")
+                # Continue anyway - authentication will reveal the real issue
+            
+            # Step 2: Authenticate
+            try:
+                logger.info(f"[TEST CONNECTION] Starting authentication process")
+                logger.info(f"[TEST CONNECTION] Odoo URL: {tenant.odoo_url}")
+                logger.info(f"[TEST CONNECTION] Database: {tenant.odoo_database}")
+                logger.info(f"[TEST CONNECTION] Username: {tenant.odoo_username}")
+                logger.info(f"[TEST CONNECTION] Password: {'*' * len(decrypted_password) if decrypted_password else 'None'}")
+                
+                auth_result = await adapter.authenticate(tenant.odoo_username, decrypted_password)
+                
+                logger.info(f"[TEST CONNECTION] Authentication result: success={auth_result.get('success')}, has_uid={bool(auth_result.get('uid'))}")
+                
+                if not auth_result.get("success"):
+                    error_msg = auth_result.get("error", "Authentication failed")
+                    logger.error(f"Odoo authentication error: {error_msg}")
+                    
+                    result["success"] = False
+                    result["message"] = f"Connection test failed: {error_msg}"
+                    result["details"]["authentication_failed"] = True
+                    result["details"]["connection_reachable"] = True  # Connection worked, auth failed
+                    result["details"]["auth_error"] = {
+                        "message": error_msg,
+                        "detailed_message": error_msg
                     }
-                else:
-                    return {
-                        "success": False,
-                        "message": f"Odoo instance returned status code {response.status_code}",
-                        "url": tenant.odoo_url
+                    try:
+                        await adapter.disconnect()
+                    except:
+                        pass
+                    return result
+                
+                # Authentication successful!
+                uid = auth_result.get("uid")
+                session_id = auth_result.get("session_id")
+                user_context = auth_result.get("user_context", {})
+                
+                logger.info(f"Authentication successful - uid: {uid}, session_id: {session_id[:20] if session_id else 'None'}...")
+                
+                # Step 3: Get user information from Odoo
+                try:
+                    user_data = await adapter.search_read(
+                        model="res.users",
+                        domain=[["id", "=", uid]],
+                        fields=["name", "login", "email", "company_id", "partner_id"]
+                    )
+                    
+                    if user_data and len(user_data) > 0:
+                        user_info_data = user_data[0]
+                        result["user_info"] = {
+                            "uid": uid,
+                            "username": user_info_data.get("login", tenant.odoo_username),
+                            "name": user_info_data.get("name", ""),
+                            "email": user_info_data.get("email", ""),
+                            "company_id": user_info_data.get("company_id"),
+                            "partner_id": user_info_data.get("partner_id"),
+                            "session_id": session_id
+                        }
+                        result["details"]["user_data"] = user_info_data
+                        result["details"]["database_query_success"] = True
+                    else:
+                        # Fallback to basic info
+                        result["user_info"] = {
+                            "uid": uid,
+                            "username": tenant.odoo_username,
+                            "name": user_context.get("name", tenant.odoo_username),
+                            "company_id": user_context.get("company_id"),
+                            "partner_id": user_context.get("partner_id"),
+                            "session_id": session_id
+                        }
+                except Exception as query_error:
+                    logger.warning(f"Failed to query user data: {str(query_error)}")
+                    # Use basic info from auth result
+                    result["user_info"] = {
+                        "uid": uid,
+                        "username": tenant.odoo_username,
+                        "name": user_context.get("name", tenant.odoo_username),
+                        "company_id": user_context.get("company_id"),
+                        "partner_id": user_context.get("partner_id"),
+                        "session_id": session_id
                     }
+                    result["details"]["query_error"] = str(query_error)
+
+                # Step 4: Try to get Odoo version
+                try:
+                    import httpx
+                    async with httpx.AsyncClient(timeout=10.0) as client:
+                        version_url = f"{tenant.odoo_url.rstrip('/')}/web/webclient/version_info"
+                        version_response = await client.get(version_url)
+                        if version_response.status_code == 200:
+                            version_data = version_response.json()
+                            result["version"] = version_data.get("server_version", "Unknown")
+                            result["details"]["server_serie"] = version_data.get("server_serie")
+                except Exception as version_error:
+                    logger.debug(f"Could not get version info: {str(version_error)}")
+                    # Version info is optional
+
+                # Success!
+                result["success"] = True
+                result["message"] = f"Connection successful - Authenticated as {result['user_info'].get('name', result['user_info'].get('username'))} in database '{tenant.odoo_database}'"
+                result["details"]["authenticated"] = True
+                result["details"]["uid"] = uid
+                
+                await adapter.disconnect()
+                return result
+
+            except Exception as auth_error:
+                logger.error(f"Authentication error: {str(auth_error)}")
+                result["success"] = False
+                result["message"] = f"Connection test failed: Authentication error - {str(auth_error)}"
+                result["details"]["authentication_failed"] = True
+                result["details"]["auth_error"] = {
+                    "message": str(auth_error),
+                    "detailed_message": str(auth_error)
+                }
+                try:
+                    await adapter.disconnect()
+                except:
+                    pass
+                return result
 
         except httpx.TimeoutException:
-            return {
-                "success": False,
-                "message": "Connection timeout",
-                "url": tenant.odoo_url
-            }
+            result["success"] = False
+            result["message"] = "Connection test failed: Connection timeout - Odoo server is not responding"
+            result["details"]["timeout"] = True
+            return result
         except httpx.RequestError as e:
-            return {
-                "success": False,
-                "message": f"Connection error: {str(e)}",
-                "url": tenant.odoo_url
-            }
+            result["success"] = False
+            result["message"] = f"Connection test failed: Connection error - {str(e)}"
+            result["details"]["connection_error"] = str(e)
+            return result
         except Exception as e:
-            return {
-                "success": False,
-                "message": f"Unexpected error: {str(e)}",
-                "url": tenant.odoo_url
-            }
+            logger.error(f"Unexpected error in test_odoo_connection: {str(e)}")
+            result["success"] = False
+            result["message"] = f"Connection test failed: Unexpected error - {str(e)}"
+            result["details"]["unexpected_error"] = str(e)
+            return result
 
     async def get_tenant_statistics(self) -> Dict[str, Any]:
         """

@@ -36,6 +36,11 @@ async def admin_login(
     - 401: Invalid credentials
     - 403: Account deactivated
     """
+    from loguru import logger
+    
+    logger.info(f"[AUTH] Login attempt - Email: {credentials.email}")
+    logger.debug(f"[AUTH] Login request received: email={credentials.email}")
+    
     admin_service = AdminService(db)
 
     result = await admin_service.authenticate(
@@ -44,11 +49,13 @@ async def admin_login(
     )
 
     if not result:
+        logger.warning(f"[AUTH] Login failed - Invalid credentials for: {credentials.email}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password"
         )
 
+    logger.info(f"[AUTH] Login successful - Email: {credentials.email}, Admin ID: {result.get('admin', {}).get('id')}")
     return AdminLoginResponse(**result)
 
 

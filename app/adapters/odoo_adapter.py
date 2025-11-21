@@ -2,6 +2,7 @@
 Odoo Adapter Implementation
 """
 import httpx
+import json
 from typing import Dict, Any, List, Optional
 from loguru import logger
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -94,21 +95,32 @@ class OdooAdapter(BaseAdapter):
         try:
             # Use URL as-is (Odoo is at root, not /odoo)
             auth_url = self.url.rstrip('/')
+            full_auth_url = f"{auth_url}/web/session/authenticate"
             
-            logger.debug(f"Authenticating to Odoo: {auth_url}/web/session/authenticate")
+            # Log detailed request information
+            logger.info(f"[ODOO AUTH] Starting authentication request")
+            logger.info(f"[ODOO AUTH] Endpoint: {full_auth_url}")
+            logger.info(f"[ODOO AUTH] Database: {self.database}")
+            logger.info(f"[ODOO AUTH] Username: {username}")
+            logger.info(f"[ODOO AUTH] Payload: {json.dumps(payload, indent=2)}")
+            logger.info(f"[ODOO AUTH] Headers: Content-Type: application/json")
             
             response = await self.client.post(
-                f"{auth_url}/web/session/authenticate",
+                full_auth_url,
                 json=payload,
                 headers={"Content-Type": "application/json"}
             )
+            
+            logger.info(f"[ODOO AUTH] Response status: {response.status_code}")
+            logger.info(f"[ODOO AUTH] Response headers: {dict(response.headers)}")
 
             # Check if response is JSON
             try:
                 result = response.json()
+                logger.info(f"[ODOO AUTH] Response body (first 500 chars): {str(result)[:500]}")
             except Exception as json_error:
-                logger.error(f"Odoo returned non-JSON response: {response.headers.get('content-type', 'unknown')}. Status: {response.status_code}")
-                logger.error(f"Response text: {response.text[:500]}")
+                logger.error(f"[ODOO AUTH] Odoo returned non-JSON response: {response.headers.get('content-type', 'unknown')}. Status: {response.status_code}")
+                logger.error(f"[ODOO AUTH] Response text (first 500 chars): {response.text[:500]}")
                 return {
                     "success": False,
                     "error": f"Invalid response from Odoo: {str(json_error)}"
@@ -121,8 +133,9 @@ class OdooAdapter(BaseAdapter):
                 self.is_connected = True
                 
                 # Log cookies for debugging
-                logger.debug(f"Odoo session cookies: {dict(response.cookies)}")
-                logger.info(f"Odoo authentication successful for user: {username}, uid: {self.uid}, session_id: {self.session_id[:20] if self.session_id else 'None'}...")
+                logger.info(f"[ODOO AUTH] Session cookies: {dict(response.cookies)}")
+                logger.info(f"[ODOO AUTH] Authentication successful - User: {username}, UID: {self.uid}, Session ID: {self.session_id[:20] if self.session_id else 'None'}...")
+                logger.info(f"[ODOO AUTH] User context: {result['result'].get('user_context', {})}")
 
                 return {
                     "success": True,
@@ -131,8 +144,16 @@ class OdooAdapter(BaseAdapter):
                     "user_context": result["result"].get("user_context", {})
                 }
             else:
-                error_msg = result.get("error", {}).get("message", "Authentication failed") if "error" in result else "Authentication failed"
-                logger.error(f"Odoo authentication failed: {error_msg}")
+                error_data = result.get("error", {})
+                error_msg = error_data.get("message", "Authentication failed") if error_data else "Authentication failed"
+                error_details = error_data.get("data", {}) if isinstance(error_data, dict) else {}
+                
+                logger.error(f"[ODOO AUTH] Authentication failed")
+                logger.error(f"[ODOO AUTH] Error message: {error_msg}")
+                logger.error(f"[ODOO AUTH] Full error object: {json.dumps(error_data, indent=2) if error_data else 'No error data'}")
+                if error_details:
+                    logger.error(f"[ODOO AUTH] Error details: {json.dumps(error_details, indent=2)}")
+                
                 return {
                     "success": False,
                     "error": error_msg

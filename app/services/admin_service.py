@@ -30,15 +30,27 @@ class AdminService:
         Returns:
             Dictionary with admin data and token, or None if authentication fails
         """
+        from loguru import logger
+        
+        logger.info(f"[AUTH SERVICE] Authenticating user: {email}")
+        
         admin = await self.admin_repo.get_by_email(email)
 
         if not admin:
+            logger.warning(f"[AUTH SERVICE] Admin not found: {email}")
             return None
 
-        if not verify_password(password, admin.hashed_password):
+        logger.debug(f"[AUTH SERVICE] Admin found: {admin.email}, ID: {admin.id}, Active: {admin.is_active}")
+        
+        password_valid = verify_password(password, admin.hashed_password)
+        logger.debug(f"[AUTH SERVICE] Password verification result: {password_valid}")
+        
+        if not password_valid:
+            logger.warning(f"[AUTH SERVICE] Invalid password for: {email}")
             return None
 
         if not admin.is_active:
+            logger.warning(f"[AUTH SERVICE] Account deactivated: {email}")
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Admin account is deactivated"
@@ -54,6 +66,8 @@ class AdminService:
             email=admin.email,
             role=admin.role.value
         )
+
+        logger.info(f"[AUTH SERVICE] Authentication successful: {email}")
 
         return {
             "admin": {

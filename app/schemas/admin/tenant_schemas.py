@@ -123,3 +123,7 @@ class TenantConnectionTest(BaseModel):
     success: bool
     message: str
     url: str
+    database: Optional[str] = None
+    version: Optional[str] = None
+    user_info: Optional[dict] = None
+    details: Optional[dict] = None

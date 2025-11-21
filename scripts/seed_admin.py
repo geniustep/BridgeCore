@@ -29,7 +29,7 @@ async def create_default_admin():
         # Check if admin already exists
         from sqlalchemy import select
         result = await session.execute(
-            select(Admin).where(Admin.email == "admin@bridgecore.local")
+            select(Admin).where(Admin.email == "admin@bridgecore.com")
         )
         existing_admin = result.scalar_one_or_none()
 
@@ -40,7 +40,7 @@ async def create_default_admin():
         # Create admin
         admin = Admin(
             id=uuid.uuid4(),
-            email="admin@bridgecore.local",
+            email="admin@bridgecore.com",
             hashed_password=get_password_hash("admin123"),  # Change in production!
             full_name="Super Admin",
             role=AdminRole.SUPER_ADMIN,
@@ -50,7 +50,7 @@ async def create_default_admin():
         session.add(admin)
         await session.commit()
         print(f"✅ Created admin user:")
-        print(f"   Email: admin@bridgecore.local")
+        print(f"   Email: admin@bridgecore.com")
         print(f"   Password: admin123")
         print(f"   ⚠️  IMPORTANT: Change this password in production!")
 

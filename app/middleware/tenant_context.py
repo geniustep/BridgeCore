@@ -28,6 +28,10 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        # Skip tenant validation for OPTIONS requests (CORS preflight)
+        if request.method == "OPTIONS":
+            return await call_next(request)
+        
         # Skip tenant validation for public routes
         public_paths = [
             "/health",

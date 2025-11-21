@@ -14,10 +14,12 @@ import {
   Tag,
   Spin,
   Alert,
+  Descriptions,
+  Typography,
 } from 'antd';
-import { ArrowLeftOutlined, SaveOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, SaveOutlined, ThunderboltOutlined, CheckCircleOutlined, CloseCircleOutlined } from '@ant-design/icons';
 import { tenantService } from '@/services/tenant.service';
-import { Tenant, TenantUpdate, Plan } from '@/types';
+import { Tenant, TenantUpdate, Plan, ConnectionTestResult } from '@/types';
 import apiClient from '@/services/api';
 import { API_ENDPOINTS } from '@/config/api';
 import dayjs from 'dayjs';
@@ -31,8 +33,11 @@ const EditTenantPage: React.FC = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<ConnectionTestResult | null>(null);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [tenant, setTenant] = useState<Tenant | null>(null);
+  const testResultRef = React.useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (id) {
@@ -100,6 +105,92 @@ const EditTenantPage: React.FC = () => {
     }
   };
 
+  const handleTestConnection = async () => {
+    if (!id) return;
+
+    // First, validate and save the form data to ensure we test with the latest values
+    try {
+      const values = await form.validateFields([
+        'odoo_url',
+        'odoo_database',
+        'odoo_username',
+        'odoo_password'
+      ]);
+      
+      // Prepare update data (only Odoo connection fields)
+      const updateData: TenantUpdate = {
+        odoo_url: values.odoo_url,
+        odoo_database: values.odoo_database,
+        odoo_username: values.odoo_username,
+      };
+      
+      // Only include password if it was provided
+      if (values.odoo_password && values.odoo_password.trim()) {
+        updateData.odoo_password = values.odoo_password;
+      }
+      
+      // Save the Odoo connection fields first
+      await tenantService.updateTenant(id, updateData);
+      
+      // Refresh tenant data to get the latest values
+      await fetchTenant();
+      
+      // Now test the connection with the saved data
+      setTesting(true);
+      setTestResult(null);
+      
+      const result = await tenantService.testConnection(id);
+      setTestResult(result);
+      
+      // Scroll to test result after a short delay to ensure it's rendered
+      setTimeout(() => {
+        testResultRef.current?.scrollIntoView({ 
+          behavior: 'smooth', 
+          block: 'center' 
+        });
+      }, 100);
+      
+      if (result.success) {
+        message.success('Connection test successful!');
+      } else {
+        message.warning(`Connection test failed: ${result.message}`);
+      }
+    } catch (error: any) {
+      setTesting(false);
+      
+      // If validation fails, show validation errors
+      if (error.errorFields) {
+        message.error('Please fix the form errors before testing connection');
+        return;
+      }
+      
+      // If save fails, show error
+      if (error.response?.status === 400 || error.response?.status === 404) {
+        message.error(error.response?.data?.detail || 'Failed to save connection settings');
+        return;
+      }
+      
+      // If test fails, show test error
+      message.error('Failed to test connection');
+      setTestResult({
+        success: false,
+        message: error.response?.data?.detail || 'Connection test failed',
+        url: form.getFieldValue('odoo_url') || tenant?.odoo_url || ''
+      });
+      
+      // Scroll to test result even on error
+      setTimeout(() => {
+        testResultRef.current?.scrollIntoView({ 
+          behavior: 'smooth', 
+          block: 'center' 
+        });
+      }, 100);
+    } finally {
+      setTesting(false);
+    }
+  };
+
+
   const onFinish = async (values: any) => {
     if (!id) return;
 
@@ -113,12 +204,16 @@ const EditTenantPage: React.FC = () => {
         allowed_features: values.allowed_features || [],
       };
 
-      // Only include password if it was changed
-      if (!values.odoo_password) {
+      // Only include password if it was provided and not empty
+      if (!values.odoo_password || !values.odoo_password.trim()) {
         delete updateData.odoo_password;
       }
 
       await tenantService.updateTenant(id, updateData);
+      
+      // Clear password field after successful save (for security)
+      form.setFieldsValue({ odoo_password: '' });
+      
       message.success('Tenant updated successfully');
       navigate('/tenants');
     } catch (error: any) {
@@ -290,6 +385,123 @@ const EditTenantPage: React.FC = () => {
             tooltip="Leave blank to keep existing password"
           >
             <Input.Password placeholder="Leave blank to keep existing" />
+          </Form.Item>
+
+          <Form.Item label="Connection Test">
+            <Space direction="vertical" style={{ width: '100%' }} size="middle">
+              <Button
+                type="default"
+                icon={<ThunderboltOutlined />}
+                onClick={handleTestConnection}
+                loading={testing}
+              >
+                Test Connection
+              </Button>
+              
+              <div ref={testResultRef}>
+              {testResult && (
+                <Alert
+                  type={testResult.success ? 'success' : 'error'}
+                  icon={testResult.success ? <CheckCircleOutlined /> : <CloseCircleOutlined />}
+                  message={
+                    <Space direction="vertical" size="small" style={{ width: '100%' }}>
+                      <Typography.Text strong>
+                        {testResult.success ? 'Connection Successful' : 'Connection Failed'}
+                      </Typography.Text>
+                      <Typography.Text type="secondary" style={{ fontSize: '12px' }}>
+                        {testResult.message}
+                      </Typography.Text>
+                    </Space>
+                  }
+                  description={
+                    testResult && (
+                      <Descriptions
+                        size="small"
+                        column={1}
+                        bordered
+                        style={{ 
+                          marginTop: 12, 
+                          backgroundColor: testResult.success ? '#f6ffed' : '#fff2f0' 
+                        }}
+                      >
+                        {testResult.database && (
+                          <Descriptions.Item label="Database">
+                            <Tag color="blue">{testResult.database}</Tag>
+                          </Descriptions.Item>
+                        )}
+                        {testResult.version && (
+                          <Descriptions.Item label="Odoo Version">
+                            <Tag color="purple">{testResult.version}</Tag>
+                          </Descriptions.Item>
+                        )}
+                        {testResult.user_info?.name && (
+                          <Descriptions.Item label="Authenticated User">
+                            <Space>
+                              <Tag color="green">{testResult.user_info.name}</Tag>
+                              {testResult.user_info.username && (
+                                <Typography.Text type="secondary" style={{ fontSize: '12px' }}>
+                                  ({testResult.user_info.username})
+                                </Typography.Text>
+                              )}
+                            </Space>
+                          </Descriptions.Item>
+                        )}
+                        {testResult.user_info?.uid && (
+                          <Descriptions.Item label="User ID">
+                            <Typography.Text code>{testResult.user_info.uid}</Typography.Text>
+                          </Descriptions.Item>
+                        )}
+                        {testResult.details?.user_data?.email && (
+                          <Descriptions.Item label="Email">
+                            <Typography.Text>{testResult.details.user_data.email}</Typography.Text>
+                          </Descriptions.Item>
+                        )}
+                        {testResult.details?.database_query_success && (
+                          <Descriptions.Item label="Database Query">
+                            <Tag color="green">✓ Verified</Tag>
+                          </Descriptions.Item>
+                        )}
+                        {testResult.details?.connection_reachable !== undefined && (
+                          <Descriptions.Item label="Connection Status">
+                            <Tag color={testResult.details.connection_reachable ? 'green' : 'red'}>
+                              {testResult.details.connection_reachable ? '✓ Reachable' : '✗ Not Reachable'}
+                            </Tag>
+                          </Descriptions.Item>
+                        )}
+                        {testResult.details?.authentication_failed && (
+                          <Descriptions.Item label="Authentication">
+                            <Tag color="red">✗ Failed</Tag>
+                          </Descriptions.Item>
+                        )}
+                        {testResult.details?.auth_error && (
+                          <Descriptions.Item label="Error Details">
+                            <Space direction="vertical" size="small">
+                              <Typography.Text type="danger" style={{ fontSize: '12px' }}>
+                                {testResult.details.auth_error.detailed_message || testResult.details.auth_error.message}
+                              </Typography.Text>
+                              {testResult.details.auth_error.error_type && (
+                                <Typography.Text type="secondary" style={{ fontSize: '11px' }}>
+                                  Type: {testResult.details.auth_error.error_type}
+                                </Typography.Text>
+                              )}
+                            </Space>
+                          </Descriptions.Item>
+                        )}
+                        {testResult.url && (
+                          <Descriptions.Item label="Odoo URL">
+                            <Typography.Text copyable={{ text: testResult.url }}>
+                              {testResult.url}
+                            </Typography.Text>
+                          </Descriptions.Item>
+                        )}
+                      </Descriptions>
+                    )
+                  }
+                  style={{ marginTop: 8 }}
+                />
+              )}
+              </div>
+            </Space>
           </Form.Item>
 
           <Divider orientation="left">Subscription Plan</Divider>

@@ -18,6 +18,7 @@ from app.api.routes import auth, health, systems, batch, barcode, files, websock
 from app.api.routes.admin import (
     auth as admin_auth,
     tenants as admin_tenants,
+    plans as admin_plans,
     analytics as admin_analytics,
     logs as admin_logs
 )
@@ -100,20 +101,8 @@ app = FastAPI(
 # Add rate limiter state
 app.state.limiter = limiter
 
-# CORS Middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Gzip Compression Middleware - Reduce response size by 70-90%
-app.add_middleware(GZipMiddleware, minimum_size=1000)
-
-# Prometheus Middleware
-app.add_middleware(PrometheusMiddleware)
+# Logging Middleware (first to execute - added last)
+app.middleware("http")(logging_middleware)
 
 # Admin Panel Middleware (Phase 2)
 from app.middleware.usage_tracking import UsageTrackingMiddleware
@@ -124,8 +113,20 @@ app.add_middleware(UsageTrackingMiddleware)  # Track all tenant requests
 app.add_middleware(TenantContextMiddleware)  # Validate tenant context
 app.add_middleware(TenantRateLimitMiddleware)  # Enforce rate limits per tenant
 
-# Logging Middleware
-app.middleware("http")(logging_middleware)
+# Prometheus Middleware
+app.add_middleware(PrometheusMiddleware)
+
+# Gzip Compression Middleware - Reduce response size by 70-90%
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+# CORS Middleware (last to execute - added first, handles OPTIONS requests)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Include routers
 app.include_router(health.router)
@@ -140,6 +141,7 @@ app.include_router(websocket.router)
 # Admin routers (NEW)
 app.include_router(admin_auth.router)  # /admin/auth/*
 app.include_router(admin_tenants.router)  # /admin/tenants/*
+app.include_router(admin_plans.router)  # /admin/plans/*
 app.include_router(admin_analytics.router)  # /admin/analytics/*
 app.include_router(admin_logs.router)  # /admin/logs/*
 

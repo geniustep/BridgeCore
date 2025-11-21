@@ -208,4 +208,26 @@ export interface ConnectionTestResult {
   success: boolean;
   message: string;
   url: string;
+  database?: string;
+  version?: string;
+  user_info?: {
+    uid?: number;
+    username?: string;
+    name?: string;
+    company_id?: number;
+    partner_id?: number;
+    session_id?: string;
+  };
+  details?: {
+    authenticated?: boolean;
+    uid?: number;
+    database_query_success?: boolean;
+    user_data?: {
+      name?: string;
+      login?: string;
+      email?: string;
+    };
+    server_serie?: string;
+    [key: string]: any;
+  };
 }

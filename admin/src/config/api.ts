@@ -3,6 +3,14 @@
 export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 export const APP_NAME = import.meta.env.VITE_APP_NAME || 'BridgeCore Admin';
 
+// Log API configuration on load
+console.log('[API CONFIG]', {
+  API_BASE_URL,
+  VITE_API_URL: import.meta.env.VITE_API_URL,
+  APP_NAME,
+  timestamp: new Date().toISOString()
+});
+
 // API endpoints
 export const API_ENDPOINTS = {
   // Auth

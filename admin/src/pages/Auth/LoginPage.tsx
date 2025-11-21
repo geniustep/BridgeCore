@@ -13,12 +13,25 @@ const LoginPage: React.FC = () => {
   const { login } = useAuthStore();
 
   const onFinish = async (values: { email: string; password: string }) => {
+    console.log('[LOGIN PAGE] Form submitted:', {
+      email: values.email,
+      hasPassword: !!values.password,
+      timestamp: new Date().toISOString()
+    });
+    
     setLoading(true);
     try {
       await login(values.email, values.password);
+      console.log('[LOGIN PAGE] Login successful, navigating to dashboard');
       message.success('Login successful!');
       navigate('/');
     } catch (error: any) {
+      console.error('[LOGIN PAGE] Login error:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        timestamp: new Date().toISOString()
+      });
       message.error(error.response?.data?.detail || 'Login failed');
     } finally {
       setLoading(false);
@@ -86,7 +99,7 @@ const LoginPage: React.FC = () => {
 
           <div style={{ textAlign: 'center' }}>
             <Text type="secondary" style={{ fontSize: '12px' }}>
-              Default credentials: admin@bridgecore.local / admin123
+              Default credentials: admin@bridgecore.com / admin123
             </Text>
           </div>
         </Space>
