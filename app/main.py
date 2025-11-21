@@ -15,6 +15,7 @@ from app.utils.logger import setup_logging
 from app.middleware.logging_middleware import logging_middleware
 from app.db.session import init_db, close_db
 from app.api.routes import auth, health, systems, batch, barcode, files, websocket, odoo
+from app.api.routes.admin import auth as admin_auth, tenants as admin_tenants
 from app.modules.webhook import router as webhook_router_v1
 from app.modules.webhook import router_v2 as webhook_router_v2
 from app.core.rate_limiter import limiter, _rate_limit_exceeded_handler
@@ -121,6 +122,10 @@ app.include_router(batch.router)
 app.include_router(barcode.router)
 app.include_router(files.router)
 app.include_router(websocket.router)
+
+# Admin routers (NEW)
+app.include_router(admin_auth.router)  # /admin/auth/*
+app.include_router(admin_tenants.router)  # /admin/tenants/*
 
 # Webhook routers (NEW)
 app.include_router(webhook_router_v1.router)  # /api/v1/webhooks/*
