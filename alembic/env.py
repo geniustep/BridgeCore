@@ -18,6 +18,16 @@ from app.models.system import System
 from app.models.audit_log import AuditLog
 from app.models.field_mapping import FieldMapping
 
+# Import admin panel models
+from app.models.admin import Admin
+from app.models.plan import Plan
+from app.models.tenant import Tenant
+from app.models.tenant_user import TenantUser
+from app.models.usage_log import UsageLog
+from app.models.error_log import ErrorLog
+from app.models.usage_stats import UsageStats
+from app.models.admin_audit_log import AdminAuditLog
+
 # This is the Alembic Config object
 config = context.config
 

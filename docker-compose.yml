@@ -141,6 +141,26 @@ services:
       - bridgecore-network
     restart: unless-stopped
 
+  # Admin Dashboard (React)
+  admin-dashboard:
+    build:
+      context: ./admin
+      dockerfile: Dockerfile
+    container_name: bridgecore-admin
+    ports:
+      - "3000:3000"
+    environment:
+      - VITE_API_URL=http://localhost:8000
+      - VITE_APP_NAME=BridgeCore Admin
+    volumes:
+      - ./admin:/app
+      - /app/node_modules
+    networks:
+      - bridgecore-network
+    restart: unless-stopped
+    depends_on:
+      - fastapi
+
   # Nginx Reverse Proxy (optional)
   nginx:
     image: nginx:alpine
@@ -154,6 +174,7 @@ services:
       - ./nginx/logs:/var/log/nginx
     depends_on:
       - fastapi
+      - admin-dashboard
     networks:
       - bridgecore-network
     restart: unless-stopped

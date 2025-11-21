@@ -1,183 +1,195 @@
-# 🚀 BridgeCore - Enterprise Middleware API
+# BridgeCore - Enterprise Multi-Tenant Middleware Platform
 
 <div align="center">
 
-**A powerful, production-ready middleware API built with FastAPI to bridge Flutter applications with external ERP/CRM systems**
+**A powerful, production-ready middleware platform with multi-tenant management, built with FastAPI to bridge Flutter applications with Odoo ERP/CRM systems**
 
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-green.svg)](https://fastapi.tiangolo.com)
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org)
+[![React](https://img.shields.io/badge/React-18.2+-61DAFB.svg)](https://react.dev)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.2+-3178C6.svg)](https://www.typescriptlang.org)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15+-blue.svg)](https://www.postgresql.org)
 [![Redis](https://img.shields.io/badge/Redis-7+-red.svg)](https://redis.io)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-[Documentation](#-documentation) • [Quick Start](#-quick-start) • [API Reference](#-api-reference) • [Contributing](#-contributing)
+[Features](#-key-features) | [Quick Start](#-quick-start) | [Admin Panel](#-admin-panel) | [API Reference](#-api-reference) | [Documentation](#-documentation)
 
 </div>
 
 ---
 
-## 📋 Table of Contents
+## Table of Contents
 
 - [Overview](#-overview)
 - [Key Features](#-key-features)
 - [Architecture](#-architecture)
 - [Quick Start](#-quick-start)
+- [Admin Panel](#-admin-panel)
+- [Multi-Tenancy](#-multi-tenancy)
 - [API Reference](#-api-reference)
 - [Webhook System](#-webhook-system)
+- [Smart Sync](#-smart-sync)
 - [Configuration](#-configuration)
-- [Development](#-development)
 - [Deployment](#-deployment)
 - [Monitoring](#-monitoring)
-- [Troubleshooting](#-troubleshooting)
 - [Contributing](#-contributing)
 
 ---
 
-## 🎯 Overview
+## Overview
 
-BridgeCore is an enterprise-grade middleware API that serves as a unified interface between Flutter mobile applications and external ERP/CRM systems (primarily Odoo). It provides real-time change tracking, smart synchronization, and comprehensive data management capabilities.
+BridgeCore is an enterprise-grade multi-tenant middleware platform that serves as a unified interface between Flutter mobile applications and Odoo ERP/CRM systems. It provides comprehensive tenant management, real-time change tracking, smart synchronization, and a full-featured admin dashboard.
 
 ### What BridgeCore Does
 
-- **🔗 Connects** Flutter apps to Odoo ERP systems seamlessly
-- **📊 Tracks** all changes in real-time via webhook system
-- **🔄 Syncs** data efficiently with smart incremental sync
-- **🛡️ Secures** all operations with JWT authentication
-- **⚡ Optimizes** performance with Redis caching and connection pooling
-- **📝 Audits** every operation for compliance and debugging
+- **Multi-Tenant Management**: Manage multiple companies/clients from a single platform
+- **Real-time Sync**: Track all Odoo changes via webhook system
+- **Smart Synchronization**: Efficient incremental sync per user/device
+- **Admin Dashboard**: Full React-based admin panel for management
+- **Rate Limiting**: Per-tenant rate limits with Redis
+- **Analytics**: Comprehensive usage tracking and reporting
+- **Secure**: JWT authentication with role-based access control
 
 ### Use Cases
 
-- **Mobile Apps**: Connect Flutter apps to Odoo ERP
-- **Real-time Sync**: Keep mobile apps in sync with ERP changes
-- **Multi-Device Support**: Sync state per user/device
-- **Data Integration**: Unified API for multiple ERP systems
-- **Enterprise Solutions**: Production-ready middleware for large-scale deployments
+- **SaaS Platform**: Offer Odoo integration as a service to multiple clients
+- **Mobile Apps**: Connect Flutter apps to Odoo ERP for multiple tenants
+- **Enterprise Solutions**: Centralized middleware for large-scale deployments
+- **Multi-Company Setup**: Single platform managing multiple Odoo instances
 
 ---
 
-## ✨ Key Features
+## Key Features
 
-### 🔐 Authentication & Security
-- **JWT Authentication**: Secure token-based authentication with refresh tokens
+### Multi-Tenant Architecture
+- **Tenant Isolation**: Complete data isolation between tenants
+- **Per-Tenant Rate Limits**: Configurable API limits per tenant
+- **Subscription Plans**: Multiple plans (Free, Starter, Professional, Enterprise)
+- **Usage Tracking**: Automatic logging of all API requests per tenant
+- **Tenant Lifecycle**: Active, Trial, Suspended, Deleted states
+
+### Admin Panel (React Dashboard)
+- **Dashboard Overview**: System statistics and health metrics
+- **Tenant Management**: Create, edit, suspend, activate tenants
+- **Analytics Dashboard**: Charts and graphs for usage patterns
+- **Usage Logs**: View and filter API request logs
+- **Error Logs**: Track and resolve application errors
+- **Connection Testing**: Test Odoo connections per tenant
+
+### Authentication & Security
+- **Dual JWT System**: Separate tokens for admins and tenant users
+- **Role-Based Access**: Super Admin, Admin, Support roles
 - **Password Hashing**: bcrypt for secure password storage
-- **SQL Injection Prevention**: Parameterized queries
-- **CORS Configuration**: Configurable cross-origin resource sharing
-- **Rate Limiting**: Protection against abuse (configurable per endpoint)
-- **Secure Headers**: Security headers for production deployments
+- **Rate Limiting**: Redis-based per-tenant rate limiting
+- **Audit Logging**: Complete audit trail for admin actions
 
-### 🔔 Webhook System (NEW)
-- **Real-time Change Detection**: Track all changes in Odoo instantly via ORM hooks
-- **Smart Multi-User Sync**: Efficient synchronization for multiple devices/users
-- **Universal Model Discovery**: Automatically discover and monitor all Odoo models
-- **ORM-based Detection**: Odoo-native change tracking through enhanced webhook module
+### Webhook System
+- **Real-time Change Detection**: Track all Odoo changes instantly
+- **Smart Multi-User Sync**: Efficient sync for multiple devices/users
+- **Universal Model Discovery**: Auto-discover and monitor Odoo models
 - **Retry Mechanism**: Automatic retry with exponential backoff
 - **Dead Letter Queue**: Handle failed events gracefully
-- **Priority System**: Classify events by importance (high/medium/low)
-- **Event Statistics**: Comprehensive analytics and reporting
 
-### 🎯 Multi-System Support
-- **Odoo** (13/16/18+): Full CRUD operations with version compatibility
-- **SAP**: Ready for integration (adapter pattern)
-- **Salesforce**: Ready for integration (adapter pattern)
-- **Adapter Pattern**: Easy integration with new systems
-
-### ⚡ Performance
+### Performance
 - **Redis Caching**: Fast data retrieval with configurable TTL
 - **Connection Pooling**: Optimized database connections
 - **Async/Await**: Non-blocking I/O operations
-- **Query Optimization**: Eager loading, bulk operations
-- **Background Tasks**: Non-blocking operation execution
+- **Background Tasks**: Celery for stats aggregation and cleanup
 - **Gzip Compression**: Automatic response compression
 
-### 📊 Advanced Features
-- **Batch Operations**: Execute multiple CRUD operations in one request
-- **File Management**: Upload/download files with attachment support
-- **Barcode Integration**: Product lookup and inventory management
-- **Report Generation**: PDF, Excel, and CSV reports
-- **Multi-Language Support**: English, Arabic, French
-- **Version Migration**: Automatic data transformation between system versions
-- **WebSocket Support**: Real-time push notifications
-
-### 📝 Monitoring & Observability
+### Monitoring & Analytics
 - **Prometheus Metrics**: Real-time performance monitoring
+- **Usage Statistics**: Per-tenant API usage tracking
+- **Error Tracking**: Severity-based error classification
+- **Response Time Tracking**: Performance analytics per endpoint
 - **Grafana Dashboards**: Visual analytics and dashboards
-- **Structured Logging**: JSON logging with Loguru
-- **Audit Trail**: Complete operation logging
-- **Health Checks**: Database, Redis, and API health monitoring
-- **Error Tracking**: Optional Sentry integration
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    Flutter Applications                      │
-│         (gmobile, delivery_app, sales_app, etc.)           │
-└──────────────┬──────────────────────────────┬───────────────┘
-               │                              │
-               │ REST/GraphQL/WebSocket       │
-               ▼                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                      BridgeCore API                          │
-├─────────────────────────────────────────────────────────────┤
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
-│  │   REST API   │  │   GraphQL    │  │  WebSocket   │     │
-│  │   (v1, v2)   │  │   API        │  │  Real-time   │     │
-│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘     │
-│         │                  │                  │              │
-│  ┌──────┴──────────────────┴──────────────────┴───────┐    │
-│  │           Webhook Module (NEW)                      │    │
-│  │  - Event Handling     - Smart Sync                  │    │
-│  │  - Update Tracking    - Multi-User State            │    │
-│  └─────────────────────────────────────────────────────┘    │
-│                                                              │
-│  ┌─────────────────────────────────────────────────────┐    │
-│  │     Universal Audit/Detection Module (NEW)          │    │
-│  │  - Auto-discovery   - Model Classification          │    │
-│  │  - ORM Interception - Change Streaming             │    │
-│  └─────────────────────────────────────────────────────┘    │
-│                                                              │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
-│  │   Caching    │  │    Queue     │  │  Monitoring  │     │
-│  │   (Redis)    │  │   (Celery)   │  │ (Prometheus) │     │
-│  └──────────────┘  └──────────────┘  └──────────────┘     │
-└─────────────┬───────────────────────────────────────────────┘
-              │
-              │ Odoo API / PostgreSQL
-              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                      Odoo ERP System                         │
-│  - auto-webhook-odoo module (Enterprise-Grade Webhook)      │
-│  - update.webhook model (stores all change events)         │
-│  - webhook.event model (for push-based delivery)          │
-│  - user.sync.state (tracks sync state per user/device)      │
-└─────────────────────────────────────────────────────────────┘
+                          BridgeCore Platform
+┌─────────────────────────────────────────────────────────────────────┐
+│                                                                     │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │                    Admin Dashboard (React)                   │   │
+│  │  - Dashboard Overview    - Tenant Management                │   │
+│  │  - Analytics & Charts    - Usage/Error Logs                 │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                              │                                      │
+│                              ▼                                      │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │                   Admin API (FastAPI)                        │   │
+│  │  /admin/auth/*     /admin/tenants/*    /admin/analytics/*   │   │
+│  │  /admin/plans/*    /admin/logs/*                            │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                              │                                      │
+│  ┌───────────────────────────┼───────────────────────────────────┐ │
+│  │                    Middleware Layer                           │ │
+│  │  ┌─────────────┐ ┌─────────────┐ ┌─────────────────────────┐ │ │
+│  │  │   Usage     │ │   Tenant    │ │      Rate Limit         │ │ │
+│  │  │  Tracking   │ │   Context   │ │   (Per-Tenant/Redis)    │ │ │
+│  │  └─────────────┘ └─────────────┘ └─────────────────────────┘ │ │
+│  └───────────────────────────────────────────────────────────────┘ │
+│                              │                                      │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │                    Tenant API (FastAPI)                      │   │
+│  │  /api/v1/auth/*    /api/v1/odoo/*    /api/v1/webhooks/*     │   │
+│  │  /api/v2/sync/*    /batch/*          /files/*               │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                              │                                      │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │                    Background Tasks (Celery)                 │   │
+│  │  - Hourly Stats Aggregation   - Daily Stats Aggregation     │   │
+│  │  - Old Logs Cleanup           - Scheduled Reports           │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                              │                                      │
+│  ┌─────────────┐ ┌─────────────┐ ┌─────────────────────────────┐   │
+│  │ PostgreSQL  │ │    Redis    │ │         Prometheus          │   │
+│  │ (Database)  │ │   (Cache)   │ │        (Monitoring)         │   │
+│  └─────────────┘ └─────────────┘ └─────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                    Tenant Odoo Instances                            │
+│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐   │
+│  │  Tenant A   │ │  Tenant B   │ │  Tenant C   │ │  Tenant N   │   │
+│  │   Odoo 17   │ │   Odoo 16   │ │   Odoo 15   │ │   Odoo 18   │   │
+│  └─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘   │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Technology Stack
 
-- **Framework**: FastAPI (Python 3.11+)
-- **Database**: PostgreSQL 15+ (async with asyncpg)
-- **Cache**: Redis 7+
-- **ORM**: SQLAlchemy 2.0 (async)
-- **Migrations**: Alembic
-- **Logging**: Loguru
-- **Testing**: Pytest + httpx
-- **Security**: JWT (python-jose) + bcrypt
-- **Monitoring**: Prometheus + Grafana
+| Component | Technology |
+|-----------|------------|
+| **Backend API** | FastAPI (Python 3.11+) |
+| **Admin Dashboard** | React 18, TypeScript, Vite |
+| **UI Components** | Ant Design 5.12 |
+| **State Management** | Zustand 4.4 |
+| **Charts** | Recharts 2.10 |
+| **Database** | PostgreSQL 15+ (async with asyncpg) |
+| **Cache** | Redis 7+ |
+| **ORM** | SQLAlchemy 2.0 (async) |
+| **Migrations** | Alembic |
+| **Background Tasks** | Celery with Redis |
+| **Authentication** | JWT (python-jose) + bcrypt |
+| **Monitoring** | Prometheus + Grafana |
+| **Containerization** | Docker & Docker Compose |
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
 - Python 3.11+
+- Node.js 18+ (for Admin Dashboard)
 - PostgreSQL 15+
 - Redis 7+
-- Docker & Docker Compose (optional, recommended)
+- Docker & Docker Compose (recommended)
 
 ### Option 1: Docker (Recommended)
 
@@ -191,21 +203,18 @@ cp env.example .env
 # Edit .env with your configuration
 
 # Start all services
-cd docker
 docker-compose up -d
 
 # View logs
-docker-compose logs -f api
-
-# Stop services
-docker-compose down
+docker-compose logs -f
 ```
 
-The API will be available at:
-- **API**: `https://bridgecore.geniura.com` (or your configured domain)
-- **Docs**: `https://bridgecore.geniura.com/docs`
-- **ReDoc**: `https://bridgecore.geniura.com/redoc`
-- **Health**: `https://bridgecore.geniura.com/health`
+Services will be available at:
+- **API**: http://localhost:8000
+- **API Docs**: http://localhost:8000/docs
+- **Admin Dashboard**: http://localhost:3000
+- **Prometheus**: http://localhost:9090
+- **Grafana**: http://localhost:3001
 
 ### Option 2: Local Development
 
@@ -214,11 +223,9 @@ The API will be available at:
 git clone https://github.com/geniustep/BridgeCore.git
 cd BridgeCore
 
-# Create virtual environment
+# Setup Python environment
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
 pip install -r requirements.txt
 
 # Setup environment
@@ -228,338 +235,349 @@ cp env.example .env
 # Run database migrations
 alembic upgrade head
 
-# Start development server
+# Seed initial data (admin user & plans)
+python scripts/seed_admin.py
+
+# Start API server
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+# In another terminal, start Admin Dashboard
+cd admin
+npm install
+npm run dev
 ```
 
-The API will be available at `http://localhost:8000`
+### Default Admin Credentials
+
+After running the seed script:
+- **Email**: admin@bridgecore.local
+- **Password**: admin123
+
+**Important**: Change these credentials immediately in production!
 
 ---
 
-## 📚 API Reference
+## Admin Panel
 
-### Base URL
+The BridgeCore Admin Panel is a comprehensive React-based dashboard for managing the platform.
 
-```
-Production: https://bridgecore.geniura.com
-Development: http://localhost:8000
-```
+### Dashboard
+- System overview with key statistics
+- Active tenants count
+- API requests (24h)
+- Error rate metrics
+- Quick actions
 
-### Authentication
+### Tenant Management
+- **List View**: View all tenants with status indicators
+- **Create Tenant**: Add new tenants with Odoo connection details
+- **Edit Tenant**: Modify tenant settings and credentials
+- **Suspend/Activate**: Control tenant access
+- **Connection Test**: Verify Odoo connectivity
 
-All API endpoints (except `/health` and `/docs`) require JWT authentication.
+### Analytics
+- **Requests Over Time**: Line chart showing API usage trends
+- **Status Distribution**: Pie chart of response codes
+- **Response Times**: Bar chart of performance by hour
+- **Top Tenants**: Most active tenants table
+- **Top Endpoints**: Most used API endpoints
 
-#### 1. Login
+### Logs
+- **Usage Logs**: Filter by tenant, method, status, date range
+- **Error Logs**: View errors with severity levels
+- **Error Resolution**: Mark errors as resolved with notes
+- **Export**: Download logs as CSV
 
-```bash
-curl -X POST 'https://bridgecore.geniura.com/api/v1/auth/login' \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "username": "your_username",
-    "password": "your_password",
-    "database": "your_database"
-  }'
-```
+### Admin Dashboard Screenshots
 
-**Response:**
-```json
+| Feature | Description |
+|---------|-------------|
+| Dashboard | System overview with statistics cards |
+| Tenants | CRUD operations with status management |
+| Analytics | Charts and graphs using Recharts |
+| Usage Logs | Filterable API request logs |
+| Error Logs | Error tracking with resolution workflow |
+
+---
+
+## Multi-Tenancy
+
+### Tenant Model
+
+Each tenant represents a company/client using the BridgeCore platform:
+
+```python
 {
-  "access_token": "eyJhbGciOiJIUzI1NiIs...",
-  "refresh_token": "eyJhbGciOiJIUzI1NiIs...",
-  "system_id": "odoo-your_username",
-  "user": {
-    "id": 1,
-    "username": "your_username",
-    "name": "Your Name",
-    "company_id": 1,
-    "partner_id": 3
-  }
+    "id": "uuid",
+    "name": "Company Name",
+    "slug": "company-name",
+    "status": "active",  # active, trial, suspended, deleted
+    "odoo_url": "https://company.odoo.com",
+    "odoo_database": "company_db",
+    "odoo_username": "api_user",
+    "plan_id": "uuid",  # Subscription plan
+    "max_requests_per_day": 10000,
+    "max_requests_per_hour": 1000,
+    "allowed_models": ["res.partner", "sale.order"],
+    "allowed_features": ["sync", "webhooks"]
 }
 ```
 
-#### 2. Use Token
+### Subscription Plans
 
-```bash
-curl -X GET 'https://bridgecore.geniura.com/api/v1/auth/me' \
-  -H 'Authorization: Bearer YOUR_ACCESS_TOKEN'
-```
+| Plan | Daily Requests | Hourly Requests | Users | Storage |
+|------|----------------|-----------------|-------|---------|
+| Free | 1,000 | 100 | 5 | 1 GB |
+| Starter | 10,000 | 1,000 | 25 | 10 GB |
+| Professional | 100,000 | 10,000 | 100 | 100 GB |
+| Enterprise | Unlimited | Unlimited | Unlimited | Unlimited |
 
-#### 3. Refresh Token
+### Rate Limiting
 
-```bash
-curl -X POST 'https://bridgecore.geniura.com/api/v1/auth/refresh' \
-  -H 'Authorization: Bearer YOUR_REFRESH_TOKEN'
-```
+Rate limits are enforced per-tenant using Redis:
 
-### Core Endpoints
+```python
+# Middleware checks limits before processing requests
+hourly_key = f"rate_limit:tenant:{tenant_id}:hour:{current_hour}"
+daily_key = f"rate_limit:tenant:{tenant_id}:day:{current_day}"
 
-#### Connect to Odoo System
-
-```bash
-curl -X POST 'https://bridgecore.geniura.com/systems/odoo-prod/connect' \
-  -H 'Authorization: Bearer YOUR_TOKEN' \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "url": "https://app.propanel.ma",
-    "database": "your_database",
-    "username": "your_username",
-    "password": "your_password",
-    "system_type": "odoo"
-  }'
-```
-
-#### CRUD Operations
-
-**Create:**
-```bash
-curl -X POST 'https://bridgecore.geniura.com/systems/odoo-prod/create?model=res.partner' \
-  -H 'Authorization: Bearer YOUR_TOKEN' \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "name": "Ahmed Ali",
-    "email": "ahmed@example.com",
-    "phone": "+966501234567"
-  }'
-```
-
-**Read:**
-```bash
-curl -X GET 'https://bridgecore.geniura.com/systems/odoo-prod/read?model=res.partner&limit=10' \
-  -H 'Authorization: Bearer YOUR_TOKEN'
-```
-
-**Update:**
-```bash
-curl -X PUT 'https://bridgecore.geniura.com/systems/odoo-prod/update/42?model=res.partner' \
-  -H 'Authorization: Bearer YOUR_TOKEN' \
-  -H 'Content-Type: application/json' \
-  -d '{"phone": "+966502222222"}'
-```
-
-**Delete:**
-```bash
-curl -X DELETE 'https://bridgecore.geniura.com/systems/odoo-prod/delete/42?model=res.partner' \
-  -H 'Authorization: Bearer YOUR_TOKEN'
-```
-
-#### Unified Odoo Operations
-
-```bash
-curl -X POST 'https://bridgecore.geniura.com/api/v1/systems/odoo-prod/odoo/search_read' \
-  -H 'Authorization: Bearer YOUR_TOKEN' \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "model": "product.product",
-    "domain": [["sale_ok", "=", true]],
-    "fields": ["id", "name", "list_price"],
-    "limit": 80,
-    "offset": 0,
-    "order": "name ASC"
-  }'
-```
-
-### Batch Operations
-
-```bash
-curl -X POST 'https://bridgecore.geniura.com/batch' \
-  -H 'Authorization: Bearer YOUR_TOKEN' \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "system_id": "odoo-prod",
-    "operations": [
-      {
-        "action": "create",
-        "model": "res.partner",
-        "data": {"name": "Partner 1", "email": "p1@example.com"}
-      },
-      {
-        "action": "update",
-        "model": "res.partner",
-        "record_id": 42,
-        "data": {"phone": "+966501234567"}
-      }
-    ]
-  }'
-```
-
-### File Operations
-
-```bash
-# Upload file
-curl -X POST 'https://bridgecore.geniura.com/files/odoo-prod/upload?model=res.partner&record_id=42' \
-  -H 'Authorization: Bearer YOUR_TOKEN' \
-  -F "file=@/path/to/image.jpg"
-
-# Download file
-curl -X GET 'https://bridgecore.geniura.com/files/odoo-prod/download/123' \
-  -H 'Authorization: Bearer YOUR_TOKEN' \
-  --output downloaded_file.jpg
-```
-
-### Barcode Operations
-
-```bash
-# Lookup product by barcode
-curl -X GET 'https://bridgecore.geniura.com/barcode/odoo-prod/lookup/6281234567890' \
-  -H 'Authorization: Bearer YOUR_TOKEN'
+# Returns 429 Too Many Requests if limit exceeded
 ```
 
 ---
 
-## 🔔 Webhook System
+## API Reference
+
+### Admin API Endpoints
+
+#### Authentication
+```bash
+# Admin Login
+POST /admin/auth/login
+{
+    "email": "admin@bridgecore.local",
+    "password": "admin123"
+}
+
+# Get Current Admin
+GET /admin/auth/me
+Authorization: Bearer {admin_token}
+
+# Logout
+POST /admin/auth/logout
+Authorization: Bearer {admin_token}
+```
+
+#### Tenant Management
+```bash
+# List Tenants
+GET /admin/tenants?status=active&skip=0&limit=100
+
+# Create Tenant
+POST /admin/tenants
+{
+    "name": "New Company",
+    "slug": "new-company",
+    "contact_email": "contact@newcompany.com",
+    "odoo_url": "https://newcompany.odoo.com",
+    "odoo_database": "newcompany_db",
+    "odoo_username": "api_user",
+    "odoo_password": "secure_password",
+    "plan_id": "uuid"
+}
+
+# Get Tenant
+GET /admin/tenants/{tenant_id}
+
+# Update Tenant
+PUT /admin/tenants/{tenant_id}
+{
+    "name": "Updated Company Name",
+    "max_requests_per_day": 20000
+}
+
+# Suspend Tenant
+POST /admin/tenants/{tenant_id}/suspend
+
+# Activate Tenant
+POST /admin/tenants/{tenant_id}/activate
+
+# Delete Tenant
+DELETE /admin/tenants/{tenant_id}
+
+# Test Connection
+POST /admin/tenants/{tenant_id}/test-connection
+```
+
+#### Analytics
+```bash
+# System Overview
+GET /admin/analytics/overview
+
+# Top Tenants
+GET /admin/analytics/top-tenants?limit=10&days=7
+
+# Tenant Analytics
+GET /admin/analytics/tenants/{tenant_id}?days=30
+
+# Daily Statistics
+GET /admin/analytics/tenants/{tenant_id}/daily?days=30
+```
+
+#### Logs
+```bash
+# Usage Logs
+GET /admin/logs/usage?tenant_id={id}&method=POST&limit=100
+
+# Usage Summary
+GET /admin/logs/usage/summary?tenant_id={id}&days=7
+
+# Error Logs
+GET /admin/logs/errors?severity=high&unresolved_only=true
+
+# Error Summary
+GET /admin/logs/errors/summary?tenant_id={id}&days=7
+
+# Resolve Error
+POST /admin/logs/errors/{error_id}/resolve
+{
+    "resolution_notes": "Fixed by updating configuration"
+}
+```
+
+### Tenant API Endpoints
+
+#### Authentication
+```bash
+# Login
+POST /api/v1/auth/login
+{
+    "username": "user@company.com",
+    "password": "password",
+    "database": "company_db"
+}
+
+# Response
+{
+    "access_token": "eyJ...",
+    "refresh_token": "eyJ...",
+    "user": {
+        "id": 1,
+        "username": "user@company.com",
+        "name": "User Name"
+    }
+}
+```
+
+#### Odoo Operations
+```bash
+# Search & Read
+POST /api/v1/odoo/search_read
+{
+    "model": "res.partner",
+    "domain": [["customer_rank", ">", 0]],
+    "fields": ["id", "name", "email"],
+    "limit": 100
+}
+
+# Create
+POST /api/v1/odoo/create
+{
+    "model": "res.partner",
+    "values": {
+        "name": "New Customer",
+        "email": "customer@example.com"
+    }
+}
+
+# Update
+POST /api/v1/odoo/write
+{
+    "model": "res.partner",
+    "ids": [1, 2, 3],
+    "values": {
+        "phone": "+1234567890"
+    }
+}
+
+# Delete
+POST /api/v1/odoo/unlink
+{
+    "model": "res.partner",
+    "ids": [1, 2, 3]
+}
+```
+
+---
+
+## Webhook System
 
 BridgeCore includes a comprehensive webhook system for real-time change tracking from Odoo.
 
 ### v1 API - Webhook Operations
 
-#### Check for Updates
-
 ```bash
-curl -X GET 'https://bridgecore.geniura.com/api/v1/webhooks/check-updates?limit=50' \
-  -H 'Authorization: Bearer YOUR_TOKEN'
-```
+# Check for Updates
+GET /api/v1/webhooks/check-updates?limit=50
 
-**Response:**
-```json
+# List Events
+GET /api/v1/webhooks/events?model=sale.order&limit=100
+
+# Push Endpoint (Odoo calls this)
+POST /api/v1/webhooks/push
 {
-  "has_update": true,
-  "last_update_at": "2025-11-16 12:30:00",
-  "summary": [
-    {"model": "sale.order", "count": 15},
-    {"model": "res.partner", "count": 8}
-  ]
+    "model": "sale.order",
+    "event": "write",
+    "record_id": 123,
+    "timestamp": "2025-11-21T10:30:00Z"
 }
 ```
 
-#### List Events
+### v2 API - Smart Sync
 
 ```bash
-curl -X GET 'https://bridgecore.geniura.com/api/v1/webhooks/events?model=sale.order&limit=100' \
-  -H 'Authorization: Bearer YOUR_TOKEN'
-```
-
-#### Enhanced Events (with Priority/Category)
-
-```bash
-curl -X GET 'https://bridgecore.geniura.com/api/v1/webhooks/events/enhanced?priority=high&limit=50' \
-  -H 'Authorization: Bearer YOUR_TOKEN'
-```
-
-#### Retry Failed Events
-
-```bash
-curl -X POST 'https://bridgecore.geniura.com/api/v1/webhooks/retry' \
-  -H 'Authorization: Bearer YOUR_TOKEN' \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "event_id": 123,
-    "force": false
-  }'
-```
-
-### v2 API - Smart Sync (Recommended for Apps)
-
-#### Smart Sync Pull
-
-```bash
-curl -X POST 'https://bridgecore.geniura.com/api/v2/sync/pull' \
-  -H 'Authorization: Bearer YOUR_TOKEN' \
-  -H 'Content-Type: application/json' \
-  -d '{
+# Smart Sync Pull
+POST /api/v2/sync/pull
+{
     "user_id": 1,
     "device_id": "device_123",
     "app_type": "sales_app",
     "limit": 100
-  }'
-```
-
-**Response:**
-```json
-{
-  "has_updates": true,
-  "new_events_count": 25,
-  "events": [
-    {
-      "id": 123,
-      "model": "sale.order",
-      "record_id": 456,
-      "event": "write",
-      "timestamp": "2025-11-16T10:30:00Z"
-    }
-  ],
-  "next_sync_token": "1234",
-  "last_sync_time": "2025-11-16T10:30:00Z"
 }
+
+# Response
+{
+    "has_updates": true,
+    "new_events_count": 25,
+    "events": [...],
+    "next_sync_token": "1234",
+    "last_sync_time": "2025-11-21T10:30:00Z"
+}
+
+# Get Sync State
+GET /api/v2/sync/state?user_id=1&device_id=device_123
+
+# Reset Sync State
+POST /api/v2/sync/reset?user_id=1&device_id=device_123
 ```
-
-**Features:**
-- ✅ Returns only NEW events since last sync
-- ✅ Filters by app type (sales_app, delivery_app, etc.)
-- ✅ Tracks sync state per user/device
-- ✅ Automatic state management
-
-#### Get Sync State
-
-```bash
-curl -X GET 'https://bridgecore.geniura.com/api/v2/sync/state?user_id=1&device_id=device_123' \
-  -H 'Authorization: Bearer YOUR_TOKEN'
-```
-
-#### Reset Sync State
-
-```bash
-curl -X POST 'https://bridgecore.geniura.com/api/v2/sync/reset?user_id=1&device_id=device_123' \
-  -H 'Authorization: Bearer YOUR_TOKEN'
-```
-
-### App Type Models
-
-The system automatically filters events based on app type:
-
-- **sales_app**: `sale.order`, `sale.order.line`, `res.partner`, `product.*`
-- **delivery_app**: `stock.picking`, `stock.move`, `stock.move.line`, `res.partner`
-- **warehouse_app**: `stock.*`, `product.product`, `stock.location`
-- **manager_app**: `sale.order`, `purchase.order`, `account.move`, `hr.expense`
-- **mobile_app**: `sale.order`, `res.partner`, `product.*`
-
-### Odoo Webhook Module Setup
-
-BridgeCore requires the **auto-webhook-odoo** module (v2.1.0+) in Odoo, which provides:
-- ✅ `update.webhook` model (for pull-based access)
-- ✅ `webhook.event` model (for push-based delivery)
-- ✅ `user.sync.state` model (for smart sync)
-
-**Installation:**
-```bash
-# Clone auto-webhook-odoo
-git clone https://github.com/geniustep/auto-webhook-odoo.git
-cp -r auto-webhook-odoo /path/to/odoo/addons/auto_webhook
-
-# In Odoo:
-# Apps → Update Apps List → Install "Auto Webhook - Enterprise Grade"
-```
-
-See `AUTO_WEBHOOK_ODOO_UPDATE.md` and `INTEGRATION_GUIDE.md` for detailed setup instructions.
 
 ---
 
-## ⚙️ Configuration
+## Configuration
 
 ### Environment Variables
 
-Create a `.env` file from `env.example`:
-
 ```env
 # Application
-APP_NAME=FastAPI Middleware
+APP_NAME=BridgeCore
 ENVIRONMENT=production
 DEBUG=False
-SECRET_KEY=your-secret-key-here-change-in-production
+SECRET_KEY=your-secret-key-change-in-production
 HOST=0.0.0.0
 PORT=8000
 
 # Database
-DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/middleware_db
+DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/bridgecore_db
 DB_POOL_SIZE=20
 DB_MAX_OVERFLOW=10
 
@@ -567,225 +585,216 @@ DB_MAX_OVERFLOW=10
 REDIS_URL=redis://redis:6379/0
 CACHE_TTL=300
 
-# JWT
-JWT_SECRET_KEY=your-jwt-secret-key-here-change-in-production
+# JWT - Tenant Authentication
+JWT_SECRET_KEY=your-jwt-secret-key-change-in-production
 JWT_ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=30
 REFRESH_TOKEN_EXPIRE_DAYS=7
 
+# JWT - Admin Authentication
+ADMIN_SECRET_KEY=your-admin-secret-key-change-in-production
+ADMIN_TOKEN_EXPIRE_HOURS=24
+
 # CORS
-CORS_ORIGINS=https://bridgecore.geniura.com,http://bridgecore.geniura.com
+CORS_ORIGINS=http://localhost:3000,https://admin.bridgecore.com
 
 # Rate Limiting
 RATE_LIMIT_ENABLED=True
-RATE_LIMIT_PER_MINUTE=60
+DEFAULT_RATE_LIMIT_PER_HOUR=1000
+DEFAULT_RATE_LIMIT_PER_DAY=10000
 
-# Odoo
-ODOO_URL=https://app.propanel.ma
+# Celery
+CELERY_BROKER_URL=redis://redis:6379/1
+CELERY_RESULT_BACKEND=redis://redis:6379/2
 
 # Monitoring (Optional)
 SENTRY_DSN=
+PROMETHEUS_ENABLED=True
 ```
 
 ---
 
-## 🛠️ Development
+## Deployment
 
-### Project Structure
+### Docker Compose (Production)
 
-```
-BridgeCore/
-├── app/
-│   ├── api/
-│   │   └── routes/          # API endpoints
-│   │       ├── auth.py       # Authentication
-│   │       ├── systems.py    # System management
-│   │       ├── odoo.py       # Odoo operations
-│   │       ├── batch.py      # Batch operations
-│   │       ├── barcode.py    # Barcode operations
-│   │       ├── files.py      # File management
-│   │       └── websocket.py  # WebSocket support
-│   ├── modules/
-│   │   ├── webhook/          # Webhook system
-│   │   │   ├── router.py    # v1 REST API
-│   │   │   ├── router_v2.py # v2 Smart Sync API
-│   │   │   ├── service.py    # Business logic
-│   │   │   └── schemas.py   # Pydantic schemas
-│   │   └── universal_audit/ # Universal detection
-│   ├── core/                 # Core configuration
-│   ├── db/                   # Database setup
-│   ├── models/               # SQLAlchemy models
-│   ├── services/             # Business logic
-│   ├── utils/                # Utilities
-│   │   └── odoo_client.py    # Odoo client
-│   └── main.py               # Application entry point
-├── docker/                    # Docker configuration
-├── scripts/                   # Utility scripts
-├── monitoring/                # Prometheus & Grafana
-├── tests/                     # Test suite
-├── docs/                      # Documentation
-├── alembic/                   # Database migrations
-└── requirements.txt           # Dependencies
-```
+```yaml
+version: '3.8'
 
-### Running Tests
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/bridgecore
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - db
+      - redis
 
-```bash
-# Run all tests
-pytest
+  admin-dashboard:
+    build: ./admin
+    ports:
+      - "3000:3000"
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    depends_on:
+      - api
 
-# Run with coverage
-pytest --cov=app --cov-report=html
+  celery-worker:
+    build: .
+    command: celery -A app.celery_app worker --loglevel=info
+    depends_on:
+      - db
+      - redis
 
-# Run specific test file
-pytest tests/test_auth.py
-```
+  celery-beat:
+    build: .
+    command: celery -A app.celery_app beat --loglevel=info
+    depends_on:
+      - db
+      - redis
 
-### Code Quality
+  db:
+    image: postgres:15
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=bridgecore
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
 
-```bash
-# Lint code
-ruff check app/
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
 
-# Format code
-ruff format app/
-
-# Type checking
-mypy app/
-```
-
-### Database Migrations
-
-```bash
-# Create new migration
-alembic revision --autogenerate -m "Description"
-
-# Apply migrations
-alembic upgrade head
-
-# Rollback one migration
-alembic downgrade -1
-```
-
----
-
-## 🚢 Deployment
-
-### Docker Deployment
-
-```bash
-# Build and start
-cd docker
-docker-compose up -d
-
-# View logs
-docker-compose logs -f api
-
-# Stop services
-docker-compose down
-
-# Rebuild after code changes
-docker-compose up -d --build
+volumes:
+  postgres_data:
+  redis_data:
 ```
 
 ### Production Checklist
 
-- [ ] Update `SECRET_KEY` and `JWT_SECRET_KEY` in `.env`
+- [ ] Change `SECRET_KEY`, `JWT_SECRET_KEY`, and `ADMIN_SECRET_KEY`
 - [ ] Set `ENVIRONMENT=production` and `DEBUG=False`
 - [ ] Configure proper `CORS_ORIGINS`
 - [ ] Set up SSL/TLS certificates
 - [ ] Configure database backups
 - [ ] Set up monitoring (Prometheus/Grafana)
 - [ ] Configure log rotation
-- [ ] Set up rate limiting
-- [ ] Enable Sentry for error tracking (optional)
+- [ ] Enable rate limiting
+- [ ] Change default admin credentials
+- [ ] Set up Sentry for error tracking
 
 ---
 
-## 📊 Monitoring
+## Monitoring
 
 ### Health Checks
 
 ```bash
-# API health
-curl https://bridgecore.geniura.com/health
+# API Health
+GET /health
 
-# Database health
-curl https://bridgecore.geniura.com/health/db
+# Database Health
+GET /health/db
 
-# Redis health
-curl https://bridgecore.geniura.com/health/redis
+# Redis Health
+GET /health/redis
 ```
 
 ### Prometheus Metrics
 
 ```bash
-curl https://bridgecore.geniura.com/metrics
+GET /metrics
 ```
 
-### Grafana Dashboards
+Available metrics:
+- `bridgecore_requests_total`: Total API requests
+- `bridgecore_request_duration_seconds`: Request duration histogram
+- `bridgecore_active_tenants`: Number of active tenants
+- `bridgecore_errors_total`: Total errors by type
 
-Grafana dashboards are available in `monitoring/grafana/dashboards/`:
-- Webhook Dashboard
-- API Performance Dashboard
-- System Health Dashboard
+### Background Tasks (Celery)
 
----
-
-## 🔧 Troubleshooting
-
-### Common Issues
-
-#### 1. Odoo Connection Failed
-
-**Problem**: Cannot connect to Odoo system
-
-**Solution**:
-- Check Odoo URL in `.env` (remove `/odoo` suffix if present)
-- Verify Odoo credentials
-- Ensure Odoo is accessible from BridgeCore server
-- Check firewall rules
-
-#### 2. Webhook Events Not Appearing
-
-**Problem**: `check-updates` returns no events
-
-**Solution**:
-- Verify **auto-webhook-odoo** module (v2.1.0+) is installed in Odoo
-- Check `update.webhook` model exists in Odoo
-- Ensure webhook configs are enabled in Odoo
-- Verify webhook triggers are active
-- Check Odoo connection is established
-- Review Odoo logs for webhook errors
-
-#### 3. Authentication Errors
-
-**Problem**: Token expired or invalid
-
-**Solution**:
-- Use refresh token to get new access token
-- Check token expiration settings in `.env`
-- Verify JWT_SECRET_KEY is correct
-
-#### 4. Database Connection Errors
-
-**Problem**: Cannot connect to PostgreSQL
-
-**Solution**:
-- Verify DATABASE_URL in `.env`
-- Check PostgreSQL is running
-- Verify database credentials
-- Check network connectivity
-
-### Getting Help
-
-- **Documentation**: See `docs/` directory for detailed guides
-- **Issues**: [GitHub Issues](https://github.com/geniustep/BridgeCore/issues)
-- **Email**: support@geniura.com
+| Task | Schedule | Description |
+|------|----------|-------------|
+| `aggregate_hourly_stats` | Every hour at :05 | Aggregate usage logs to hourly stats |
+| `aggregate_daily_stats` | Daily at 00:30 | Aggregate hourly stats to daily |
+| `cleanup_old_logs` | Daily at 02:00 | Delete logs older than 90 days |
 
 ---
 
-## 🤝 Contributing
+## Project Structure
+
+```
+BridgeCore/
+├── app/
+│   ├── api/
+│   │   └── routes/
+│   │       ├── admin/              # Admin API routes
+│   │       │   ├── auth.py         # Admin authentication
+│   │       │   ├── tenants.py      # Tenant management
+│   │       │   ├── analytics.py    # Analytics endpoints
+│   │       │   └── logs.py         # Logs endpoints
+│   │       ├── auth.py             # Tenant authentication
+│   │       ├── odoo.py             # Odoo operations
+│   │       └── webhooks.py         # Webhook endpoints
+│   ├── middleware/
+│   │   ├── usage_tracking.py       # Request logging
+│   │   ├── tenant_context.py       # Tenant validation
+│   │   └── tenant_rate_limit.py    # Rate limiting
+│   ├── models/                     # SQLAlchemy models
+│   │   ├── admin.py                # Admin user model
+│   │   ├── tenant.py               # Tenant model
+│   │   ├── plan.py                 # Subscription plans
+│   │   ├── usage_log.py            # Usage logs
+│   │   └── error_log.py            # Error logs
+│   ├── repositories/               # Data access layer
+│   ├── services/                   # Business logic
+│   │   ├── admin_service.py        # Admin operations
+│   │   ├── tenant_service.py       # Tenant operations
+│   │   ├── analytics_service.py    # Analytics
+│   │   └── logging_service.py      # Log management
+│   ├── tasks/                      # Celery tasks
+│   │   └── stats_aggregation.py    # Background jobs
+│   ├── core/                       # Core configuration
+│   │   ├── config.py               # Settings
+│   │   └── security.py             # JWT & passwords
+│   ├── celery_app.py               # Celery configuration
+│   └── main.py                     # Application entry
+├── admin/                          # React Admin Dashboard
+│   ├── src/
+│   │   ├── components/             # React components
+│   │   │   └── Layout/             # Layout components
+│   │   ├── pages/                  # Page components
+│   │   │   ├── Auth/               # Login page
+│   │   │   ├── Dashboard/          # Dashboard page
+│   │   │   ├── Tenants/            # Tenant pages
+│   │   │   ├── Analytics/          # Analytics page
+│   │   │   └── Logs/               # Logs pages
+│   │   ├── services/               # API services
+│   │   ├── store/                  # Zustand stores
+│   │   ├── types/                  # TypeScript types
+│   │   └── config/                 # Configuration
+│   ├── package.json
+│   └── Dockerfile
+├── alembic/                        # Database migrations
+├── docker/                         # Docker configuration
+├── scripts/                        # Utility scripts
+│   └── seed_admin.py               # Initial data seed
+├── monitoring/                     # Prometheus & Grafana
+├── tests/                          # Test suite
+├── docker-compose.yml
+├── requirements.txt
+└── README.md
+```
+
+---
+
+## Contributing
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
@@ -795,49 +804,42 @@ Grafana dashboards are available in `monitoring/grafana/dashboards/`:
 
 ### Development Guidelines
 
-- Follow PEP 8 style guide
+- Follow PEP 8 for Python code
+- Use TypeScript for React components
 - Write tests for new features
 - Update documentation
 - Add type hints
-- Write clear commit messages
 
 ---
 
-## 📄 License
+## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ---
 
-## 🗺️ Roadmap
+## Roadmap
 
-- [x] Webhook system with real-time change tracking
-- [x] Smart sync for multi-user/multi-device scenarios
-- [x] Universal audit system with auto-discovery
-- [x] GraphQL API support
-- [x] WebSocket support for real-time updates
-- [x] Prometheus metrics and Grafana dashboards
+- [x] Multi-tenant architecture
+- [x] Admin panel with React dashboard
+- [x] Per-tenant rate limiting
+- [x] Usage tracking and analytics
+- [x] Error logging with resolution workflow
+- [x] Background tasks with Celery
+- [x] Webhook system for real-time sync
+- [x] Smart sync for mobile apps
 - [ ] SAP integration
 - [ ] Salesforce integration
-- [ ] Advanced field mapping UI
-- [ ] Multi-tenancy support
 - [ ] Kubernetes deployment configs
-
----
-
-## 🙏 Acknowledgments
-
-- FastAPI framework
-- SQLAlchemy team
-- Python community
-- Odoo community
+- [ ] Advanced reporting and exports
+- [ ] Multi-language admin panel
 
 ---
 
 <div align="center">
 
-**Made with ❤️ by the BridgeCore Team**
+**Made with care by the BridgeCore Team**
 
-[⭐ Star us on GitHub](https://github.com/geniustep/BridgeCore) | [📖 Documentation](./docs/) | [🐛 Report Bug](https://github.com/geniustep/BridgeCore/issues)
+[Star on GitHub](https://github.com/geniustep/BridgeCore) | [Documentation](./docs/) | [Report Bug](https://github.com/geniustep/BridgeCore/issues)
 
 </div>

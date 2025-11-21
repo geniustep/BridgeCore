@@ -51,6 +51,13 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=30, env="ACCESS_TOKEN_EXPIRE_MINUTES")
     REFRESH_TOKEN_EXPIRE_DAYS: int = Field(default=7, env="REFRESH_TOKEN_EXPIRE_DAYS")
 
+    # Admin JWT (separate secret for admin tokens)
+    ADMIN_SECRET_KEY: str = Field(
+        default_factory=lambda: secrets.token_urlsafe(32),
+        env="ADMIN_SECRET_KEY"
+    )
+    ADMIN_TOKEN_EXPIRE_MINUTES: int = Field(default=480, env="ADMIN_TOKEN_EXPIRE_MINUTES")  # 8 hours
+
     # Logging
     LOG_LEVEL: str = Field(default="INFO", env="LOG_LEVEL")
     LOG_FILE_PATH: str = Field(default="logs/app.log", env="LOG_FILE_PATH")
@@ -65,6 +72,10 @@ class Settings(BaseSettings):
     # Rate Limiting
     RATE_LIMIT_ENABLED: bool = Field(default=True, env="RATE_LIMIT_ENABLED")
     RATE_LIMIT_PER_MINUTE: int = Field(default=60, env="RATE_LIMIT_PER_MINUTE")
+
+    # Tenant Rate Limiting (default limits if not specified in plan)
+    DEFAULT_TENANT_RATE_LIMIT_PER_HOUR: int = Field(default=1000, env="DEFAULT_TENANT_RATE_LIMIT_PER_HOUR")
+    DEFAULT_TENANT_RATE_LIMIT_PER_DAY: int = Field(default=10000, env="DEFAULT_TENANT_RATE_LIMIT_PER_DAY")
 
     # Monitoring
     SENTRY_DSN: Optional[str] = Field(default=None, env="SENTRY_DSN")
