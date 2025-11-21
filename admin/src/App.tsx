@@ -7,6 +7,11 @@ import { useAuthStore } from './store/auth.store';
 import LoginPage from './pages/Auth/LoginPage';
 import DashboardPage from './pages/Dashboard/DashboardPage';
 import TenantsListPage from './pages/Tenants/TenantsListPage';
+import CreateTenantPage from './pages/Tenants/CreateTenantPage';
+import EditTenantPage from './pages/Tenants/EditTenantPage';
+import AnalyticsPage from './pages/Analytics/AnalyticsPage';
+import UsageLogsPage from './pages/Logs/UsageLogsPage';
+import ErrorLogsPage from './pages/Logs/ErrorLogsPage';
 
 // Layout
 import MainLayout from './components/Layout/MainLayout';
@@ -54,8 +59,11 @@ const App: React.FC = () => {
           >
             <Route index element={<DashboardPage />} />
             <Route path="tenants" element={<TenantsListPage />} />
-            <Route path="analytics" element={<div><h1>Analytics</h1><p>Coming soon...</p></div>} />
-            <Route path="logs" element={<div><h1>Logs</h1><p>Coming soon...</p></div>} />
+            <Route path="tenants/create" element={<CreateTenantPage />} />
+            <Route path="tenants/:id/edit" element={<EditTenantPage />} />
+            <Route path="analytics" element={<AnalyticsPage />} />
+            <Route path="logs/usage" element={<UsageLogsPage />} />
+            <Route path="logs/errors" element={<ErrorLogsPage />} />
           </Route>
 
           {/* Fallback */}

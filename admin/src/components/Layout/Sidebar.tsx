@@ -5,6 +5,9 @@ import {
   TeamOutlined,
   BarChartOutlined,
   FileTextOutlined,
+  ApiOutlined,
+  BugOutlined,
+  PlusOutlined,
 } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { APP_NAME } from '@/config/api';
@@ -26,9 +29,20 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed }) => {
       label: 'Dashboard',
     },
     {
-      key: '/tenants',
+      key: 'tenants-group',
       icon: <TeamOutlined />,
       label: 'Tenants',
+      children: [
+        {
+          key: '/tenants',
+          label: 'All Tenants',
+        },
+        {
+          key: '/tenants/create',
+          icon: <PlusOutlined />,
+          label: 'Create Tenant',
+        },
+      ],
     },
     {
       key: '/analytics',
@@ -36,9 +50,21 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed }) => {
       label: 'Analytics',
     },
     {
-      key: '/logs',
+      key: 'logs-group',
       icon: <FileTextOutlined />,
       label: 'Logs',
+      children: [
+        {
+          key: '/logs/usage',
+          icon: <ApiOutlined />,
+          label: 'Usage Logs',
+        },
+        {
+          key: '/logs/errors',
+          icon: <BugOutlined />,
+          label: 'Error Logs',
+        },
+      ],
     },
   ];
 

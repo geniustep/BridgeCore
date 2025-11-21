@@ -108,28 +108,33 @@ export interface UsageLog {
   id: number;
   tenant_id: string;
   user_id: string | null;
-  timestamp: string;
+  created_at: string;
   endpoint: string;
   method: string;
-  model_name: string | null;
-  request_size_bytes: number | null;
-  response_size_bytes: number | null;
-  response_time_ms: number | null;
   status_code: number;
-  ip_address: string | null;
+  response_time_ms: number | null;
+  client_ip: string | null;
+  user_agent: string | null;
+  request_body_size: number | null;
+  response_body_size: number | null;
+  odoo_model: string | null;
+  odoo_method: string | null;
+  error_message: string | null;
 }
 
 export interface ErrorLog {
   id: number;
   tenant_id: string;
-  timestamp: string;
+  user_id: string | null;
+  created_at: string;
   error_type: string;
   error_message: string;
   stack_trace: string | null;
   endpoint: string | null;
-  method: string | null;
+  request_id: string | null;
+  request_data: Record<string, any> | null;
   severity: 'low' | 'medium' | 'high' | 'critical';
-  is_resolved: boolean;
+  resolved: boolean;
   resolved_at: string | null;
   resolved_by: string | null;
   resolution_notes: string | null;

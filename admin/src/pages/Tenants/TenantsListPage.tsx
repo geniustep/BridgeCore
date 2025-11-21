@@ -1,11 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Button, Space, Tag, Input, Select, message, Popconfirm } from 'antd';
+import { Table, Button, Space, Tag, Select, message, Popconfirm } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, StopOutlined, CheckOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useTenantStore } from '@/store/tenant.store';
 import type { Tenant } from '@/types';
-
-const { Search } = Input;
 
 const TenantsListPage: React.FC = () => {
   const navigate = useNavigate();
@@ -63,7 +61,7 @@ const TenantsListPage: React.FC = () => {
       dataIndex: 'name',
       key: 'name',
       render: (text: string, record: Tenant) => (
-        <a onClick={() => navigate(`/tenants/${record.id}`)}>{text}</a>
+        <a onClick={() => navigate(`/tenants/${record.id}/edit`)}>{text}</a>
       ),
     },
     {
@@ -99,7 +97,7 @@ const TenantsListPage: React.FC = () => {
             type="link"
             size="small"
             icon={<EditOutlined />}
-            onClick={() => navigate(`/tenants/${record.id}`)}
+            onClick={() => navigate(`/tenants/${record.id}/edit`)}
           >
             Edit
           </Button>
@@ -142,7 +140,7 @@ const TenantsListPage: React.FC = () => {
         <Button
           type="primary"
           icon={<PlusOutlined />}
-          onClick={() => navigate('/tenants/new')}
+          onClick={() => navigate('/tenants/create')}
         >
           Add Tenant
         </Button>

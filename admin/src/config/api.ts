@@ -18,6 +18,10 @@ export const API_ENDPOINTS = {
   TENANT_TEST: (id: string) => `/admin/tenants/${id}/test-connection`,
   TENANT_STATS: '/admin/tenants/statistics',
 
+  // Plans
+  PLANS: '/admin/plans',
+  PLAN: (id: string) => `/admin/plans/${id}`,
+
   // Analytics
   ANALYTICS_OVERVIEW: '/admin/analytics/overview',
   ANALYTICS_TOP_TENANTS: '/admin/analytics/top-tenants',
