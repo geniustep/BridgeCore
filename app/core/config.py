@@ -65,7 +65,7 @@ class Settings(BaseSettings):
 
     # CORS
     CORS_ORIGINS: List[str] = Field(
-        default=["https://bridgecore.geniura.com", "http://bridgecore.geniura.com", "http://localhost:3000", "http://localhost:8080"],
+        default=["https://bridgecore.geniura.com", "http://bridgecore.geniura.com", "http://localhost:3000", "http://localhost:8001", "http://localhost:8080"],
         env="CORS_ORIGINS"
     )
 

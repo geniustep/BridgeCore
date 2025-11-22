@@ -66,10 +66,40 @@ services:
       - middleware_network
     restart: unless-stopped
 
+  admin:
+    build:
+      context: ../admin
+      dockerfile: Dockerfile
+    container_name: bridgecore_admin
+    networks:
+      - middleware_network
+      - routy-traefik_web
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=routy-traefik_web"
+      # HTTP to HTTPS redirect
+      - "traefik.http.routers.bridgecore-admin-web.rule=Host(`bridgecore.geniura.com`) && PathPrefix(`/admin`)"
+      - "traefik.http.routers.bridgecore-admin-web.entrypoints=web"
+      - "traefik.http.routers.bridgecore-admin-web.middlewares=https-redirect"
+      # HTTPS
+      - "traefik.http.routers.bridgecore-admin.rule=Host(`bridgecore.geniura.com`) && PathPrefix(`/admin`)"
+      - "traefik.http.routers.bridgecore-admin.entrypoints=websecure"
+      - "traefik.http.routers.bridgecore-admin.tls.certresolver=lehttp"
+      - "traefik.http.routers.bridgecore-admin.service=bridgecore-admin"
+      - "traefik.http.services.bridgecore-admin.loadbalancer.server.port=3000"
+      # Strip /admin prefix
+      - "traefik.http.middlewares.admin-stripprefix.stripprefix.prefixes=/admin"
+      - "traefik.http.routers.bridgecore-admin.middlewares=admin-stripprefix"
+    restart: unless-stopped
+    depends_on:
+      - api
+
 
 volumes:
   postgres_data:
+    driver: local
   redis_data:
+    driver: local
 
 networks:
   middleware_network:

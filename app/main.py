@@ -18,6 +18,7 @@ from app.api.routes import auth, health, systems, batch, barcode, files, websock
 from app.api.routes.admin import (
     auth as admin_auth,
     tenants as admin_tenants,
+    tenant_users as admin_tenant_users,
     plans as admin_plans,
     analytics as admin_analytics,
     logs as admin_logs
@@ -141,6 +142,7 @@ app.include_router(websocket.router)
 # Admin routers (NEW)
 app.include_router(admin_auth.router)  # /admin/auth/*
 app.include_router(admin_tenants.router)  # /admin/tenants/*
+app.include_router(admin_tenant_users.router)  # /admin/tenant-users/*
 app.include_router(admin_plans.router)  # /admin/plans/*
 app.include_router(admin_analytics.router)  # /admin/analytics/*
 app.include_router(admin_logs.router)  # /admin/logs/*

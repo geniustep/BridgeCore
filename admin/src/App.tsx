@@ -9,6 +9,7 @@ import DashboardPage from './pages/Dashboard/DashboardPage';
 import TenantsListPage from './pages/Tenants/TenantsListPage';
 import CreateTenantPage from './pages/Tenants/CreateTenantPage';
 import EditTenantPage from './pages/Tenants/EditTenantPage';
+import TenantUsersPage from './pages/Tenants/TenantUsersPage';
 import AnalyticsPage from './pages/Analytics/AnalyticsPage';
 import UsageLogsPage from './pages/Logs/UsageLogsPage';
 import ErrorLogsPage from './pages/Logs/ErrorLogsPage';
@@ -38,7 +39,7 @@ const App: React.FC = () => {
         },
       }}
     >
-      <BrowserRouter>
+      <BrowserRouter basename="/admin">
         <Routes>
           {/* Public Routes */}
           <Route
@@ -61,6 +62,7 @@ const App: React.FC = () => {
             <Route path="tenants" element={<TenantsListPage />} />
             <Route path="tenants/create" element={<CreateTenantPage />} />
             <Route path="tenants/:id/edit" element={<EditTenantPage />} />
+            <Route path="tenants/:tenantId/users" element={<TenantUsersPage />} />
             <Route path="analytics" element={<AnalyticsPage />} />
             <Route path="logs/usage" element={<UsageLogsPage />} />
             <Route path="logs/errors" element={<ErrorLogsPage />} />

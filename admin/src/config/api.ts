@@ -1,11 +1,17 @@
 // API configuration
 
-export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+// Use relative path for production, absolute for local dev
+// In production (https://bridgecore.geniura.com/admin/), requests go to same domain
+// In local dev (http://localhost:8001), requests go to localhost:8001 which proxies to API
+const isProduction = window.location.hostname !== 'localhost';
+export const API_BASE_URL = isProduction ? '' : (import.meta.env.VITE_API_URL || 'http://localhost:8001');
 export const APP_NAME = import.meta.env.VITE_APP_NAME || 'BridgeCore Admin';
 
 // Log API configuration on load
 console.log('[API CONFIG]', {
   API_BASE_URL,
+  isProduction,
+  hostname: window.location.hostname,
   VITE_API_URL: import.meta.env.VITE_API_URL,
   APP_NAME,
   timestamp: new Date().toISOString()

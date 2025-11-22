@@ -150,7 +150,7 @@ services:
     ports:
       - "3002:3000"
     environment:
-      - VITE_API_URL=http://localhost:8001
+      - VITE_API_URL=https://bridgecore.geniura.com
       - VITE_APP_NAME=BridgeCore Admin
     volumes:
       - ./admin:/app

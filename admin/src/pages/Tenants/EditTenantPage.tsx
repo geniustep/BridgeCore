@@ -17,7 +17,7 @@ import {
   Descriptions,
   Typography,
 } from 'antd';
-import { ArrowLeftOutlined, SaveOutlined, ThunderboltOutlined, CheckCircleOutlined, CloseCircleOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, SaveOutlined, ThunderboltOutlined, CheckCircleOutlined, CloseCircleOutlined, UserOutlined } from '@ant-design/icons';
 import { tenantService } from '@/services/tenant.service';
 import { Tenant, TenantUpdate, Plan, ConnectionTestResult } from '@/types';
 import apiClient from '@/services/api';
@@ -248,14 +248,22 @@ const EditTenantPage: React.FC = () => {
 
   return (
     <div style={{ padding: '24px' }}>
-      <Button
-        type="text"
-        icon={<ArrowLeftOutlined />}
-        onClick={() => navigate('/tenants')}
-        style={{ marginBottom: '16px' }}
-      >
-        Back to Tenants
-      </Button>
+      <Space style={{ marginBottom: '16px', width: '100%', justifyContent: 'space-between' }}>
+        <Button
+          type="text"
+          icon={<ArrowLeftOutlined />}
+          onClick={() => navigate('/tenants')}
+        >
+          Back to Tenants
+        </Button>
+        <Button
+          type="default"
+          icon={<UserOutlined />}
+          onClick={() => navigate(`/tenants/${id}/users`)}
+        >
+          Manage Users
+        </Button>
+      </Space>
 
       <Card title={`Edit Tenant: ${tenant.name}`}>
         <Form form={form} layout="vertical" onFinish={onFinish}>
@@ -364,10 +372,13 @@ const EditTenantPage: React.FC = () => {
 
           <Form.Item name="odoo_version" label="Odoo Version">
             <Select placeholder="Select Odoo version">
+              <Option value="19.0">Odoo 19.0</Option>
+              <Option value="18.0">Odoo 18.0</Option>
               <Option value="17.0">Odoo 17.0</Option>
               <Option value="16.0">Odoo 16.0</Option>
               <Option value="15.0">Odoo 15.0</Option>
               <Option value="14.0">Odoo 14.0</Option>
+              <Option value="13.0">Odoo 13.0</Option>
             </Select>
           </Form.Item>
 

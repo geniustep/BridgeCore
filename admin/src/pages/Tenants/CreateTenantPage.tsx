@@ -198,10 +198,13 @@ const CreateTenantPage: React.FC = () => {
 
           <Form.Item name="odoo_version" label="Odoo Version">
             <Select placeholder="Select Odoo version">
+              <Option value="19.0">Odoo 19.0</Option>
+              <Option value="18.0">Odoo 18.0</Option>
               <Option value="17.0">Odoo 17.0</Option>
               <Option value="16.0">Odoo 16.0</Option>
               <Option value="15.0">Odoo 15.0</Option>
               <Option value="14.0">Odoo 14.0</Option>
+              <Option value="13.0">Odoo 13.0</Option>
             </Select>
           </Form.Item>
 

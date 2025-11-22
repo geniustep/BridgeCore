@@ -20,6 +20,11 @@ from app.schemas.admin.plan_schemas import (
     PlanCreate,
     PlanUpdate
 )
+from app.schemas.admin.tenant_user_schemas import (
+    TenantUserCreate,
+    TenantUserUpdate,
+    TenantUserResponse
+)
 
 __all__ = [
     "AdminLogin",
@@ -32,6 +37,9 @@ __all__ = [
     "TenantResponse",
     "TenantListResponse",
     "TenantConnectionTest",
+    "TenantUserCreate",
+    "TenantUserUpdate",
+    "TenantUserResponse",
     "PlanResponse",
     "PlanCreate",
     "PlanUpdate",

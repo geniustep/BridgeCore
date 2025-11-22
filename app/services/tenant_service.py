@@ -174,6 +174,14 @@ class TenantService:
         if "odoo_password" in data:
             data["odoo_password"] = encryption_service.encrypt_value(data["odoo_password"])
 
+        # Convert timezone-aware datetime to naive for database
+        datetime_fields = ["trial_ends_at", "subscription_ends_at"]
+        for field in datetime_fields:
+            if field in data and data[field] is not None:
+                if isinstance(data[field], datetime) and data[field].tzinfo is not None:
+                    # Remove timezone info (convert to naive datetime)
+                    data[field] = data[field].replace(tzinfo=None)
+
         # Update fields
         for key, value in data.items():
             if hasattr(tenant, key):
