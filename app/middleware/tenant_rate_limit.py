@@ -44,7 +44,7 @@ class TenantRateLimitMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
         
         # Skip rate limiting for certain paths
-        skip_paths = ["/health", "/metrics", "/docs", "/redoc", "/openapi.json", "/admin"]
+        skip_paths = ["/health", "/metrics", "/docs", "/redoc", "/openapi.json", "/admin", "/api/v1/auth"]
         if any(request.url.path.startswith(path) for path in skip_paths):
             return await call_next(request)
 

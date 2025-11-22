@@ -40,7 +40,8 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
             "/redoc",
             "/openapi.json",
             "/admin",  # Admin routes don't need tenant context
-            "/auth"    # Auth routes don't need tenant context
+            "/api/v1/auth",  # Auth routes don't need tenant context (including /tenant/login)
+            "/auth"    # Legacy auth routes (backward compatibility)
         ]
 
         if any(request.url.path.startswith(path) for path in public_paths):
