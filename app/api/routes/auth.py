@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from typing import Optional, Dict, Any
 from uuid import UUID
 from datetime import datetime
@@ -49,10 +49,17 @@ security = HTTPBearer()
 # Tenant User Authentication (for Flutter apps)
 # ============================================================================
 
+class OdooFieldsRequest(BaseModel):
+    """Optional Odoo fields validation request"""
+    model: str = Field(..., description="Odoo model name (e.g., 'res.users')")
+    list_fields: list[str] = Field(..., description="List of field names to check and retrieve")
+
+
 class TenantLoginRequest(BaseModel):
     """Tenant user login request"""
     email: EmailStr
     password: str
+    odoo_fields_check: Optional[OdooFieldsRequest] = Field(None, description="Optional: Check and retrieve Odoo model fields")
 
 
 class TenantTokenResponse(BaseModel):
@@ -63,6 +70,7 @@ class TenantTokenResponse(BaseModel):
     expires_in: int
     user: Dict[str, Any]
     tenant: Dict[str, Any]
+    odoo_fields_data: Optional[Dict[str, Any]] = Field(None, description="Optional Odoo fields data if requested")
 
 
 @router.post("/tenant/login", response_model=TenantTokenResponse)
@@ -209,6 +217,124 @@ async def tenant_login(
             f"(Tenant: {tenant.name})"
         )
 
+        # Optional: Check Odoo fields if requested
+        odoo_fields_data = None
+        if request.odoo_fields_check:
+            try:
+                from app.adapters.odoo_adapter import OdooAdapter
+                from app.core.encryption import encryption_service
+                
+                logger.info(f"Checking Odoo fields for model: {request.odoo_fields_check.model}")
+                
+                # Decrypt Odoo password
+                try:
+                    decrypted_password = encryption_service.decrypt_value(tenant.odoo_password)
+                except Exception as decrypt_error:
+                    logger.warning(f"Password decryption failed: {str(decrypt_error)}")
+                    decrypted_password = tenant.odoo_password
+                
+                # Create Odoo adapter
+                adapter = OdooAdapter({
+                    "url": tenant.odoo_url,
+                    "database": tenant.odoo_database,
+                    "username": tenant.odoo_username,
+                    "password": decrypted_password,
+                    "system_version": tenant.odoo_version
+                })
+                
+                # Authenticate
+                auth_result = await adapter.authenticate(tenant.odoo_username, decrypted_password)
+                
+                if auth_result.get("success"):
+                    # Step 1: Check if model exists
+                    try:
+                        model_check = await adapter.search_read(
+                            model="ir.model",
+                            domain=[["model", "=", request.odoo_fields_check.model]],
+                            fields=["name", "model"]
+                        )
+                        
+                        if not model_check or len(model_check) == 0:
+                            odoo_fields_data = {
+                                "success": False,
+                                "error": f"Model '{request.odoo_fields_check.model}' not found in Odoo",
+                                "model_exists": False
+                            }
+                        else:
+                            # Step 2: Check which fields exist
+                            fields_check = await adapter.search_read(
+                                model="ir.model.fields",
+                                domain=[
+                                    ["model", "=", request.odoo_fields_check.model],
+                                    ["name", "in", request.odoo_fields_check.list_fields]
+                                ],
+                                fields=["name", "field_description", "ttype"]
+                            )
+                            
+                            existing_fields = {field["name"]: field for field in fields_check}
+                            missing_fields = [f for f in request.odoo_fields_check.list_fields if f not in existing_fields]
+                            
+                            # Step 3: If all fields exist, fetch data for current user
+                            if len(missing_fields) == 0:
+                                try:
+                                    # Use the logged-in user's odoo_user_id, not the tenant admin's uid
+                                    odoo_user_id_to_fetch = user.odoo_user_id if user.odoo_user_id else auth_result.get("uid")
+                                    
+                                    logger.info(f"Fetching Odoo data for user_id: {odoo_user_id_to_fetch} (BridgeCore user: {user.email})")
+                                    
+                                    # Get current user's data with requested fields
+                                    user_data = await adapter.search_read(
+                                        model=request.odoo_fields_check.model,
+                                        domain=[["id", "=", odoo_user_id_to_fetch]],
+                                        fields=request.odoo_fields_check.list_fields
+                                    )
+                                    
+                                    odoo_fields_data = {
+                                        "success": True,
+                                        "model_exists": True,
+                                        "model_name": model_check[0].get("name"),
+                                        "fields_exist": True,
+                                        "fields_info": existing_fields,
+                                        "data": user_data[0] if user_data else None
+                                    }
+                                except Exception as data_error:
+                                    logger.error(f"Error fetching Odoo data: {str(data_error)}")
+                                    odoo_fields_data = {
+                                        "success": False,
+                                        "model_exists": True,
+                                        "fields_exist": True,
+                                        "error": f"Error fetching data: {str(data_error)}"
+                                    }
+                            else:
+                                odoo_fields_data = {
+                                    "success": False,
+                                    "model_exists": True,
+                                    "fields_exist": False,
+                                    "existing_fields": list(existing_fields.keys()),
+                                    "missing_fields": missing_fields,
+                                    "error": f"Missing fields: {', '.join(missing_fields)}"
+                                }
+                    except Exception as check_error:
+                        logger.error(f"Error checking Odoo model/fields: {str(check_error)}")
+                        odoo_fields_data = {
+                            "success": False,
+                            "error": f"Error checking model/fields: {str(check_error)}"
+                        }
+                    
+                    await adapter.disconnect()
+                else:
+                    odoo_fields_data = {
+                        "success": False,
+                        "error": "Failed to authenticate with Odoo"
+                    }
+                    
+            except Exception as odoo_error:
+                logger.error(f"Error in Odoo fields check: {str(odoo_error)}")
+                odoo_fields_data = {
+                    "success": False,
+                    "error": f"Odoo connection error: {str(odoo_error)}"
+                }
+
         # Build response
         return TenantTokenResponse(
             access_token=access_token,
@@ -225,8 +351,11 @@ async def tenant_login(
                 "id": str(tenant.id),
                 "name": tenant.name,
                 "slug": tenant.slug,
-                "status": tenant.status.value
-            }
+                "status": tenant.status.value,
+                "odoo_database": tenant.odoo_database,
+                "odoo_version": tenant.odoo_version
+            },
+            odoo_fields_data=odoo_fields_data
         )
 
     except HTTPException:
@@ -316,20 +445,46 @@ async def tenant_refresh_token(
     }
 
 
-@router.get("/tenant/me")
+class TenantMeRequest(BaseModel):
+    """Optional request body for /me endpoint"""
+    odoo_fields_check: Optional[OdooFieldsRequest] = Field(None, description="Optional: Check and retrieve Odoo model fields")
+
+
+@router.post("/tenant/me")
 async def get_tenant_user_info(
+    request: Optional[TenantMeRequest] = None,
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Get current tenant user information
-
+    Get current tenant user information with enhanced Odoo data
+    
+    This endpoint returns comprehensive user information including:
+    - User profile from BridgeCore
+    - Tenant information
+    - Odoo partner_id and employee_id
+    - Odoo groups and permissions
+    - Company information
+    - Optional custom Odoo fields
+    
     Args:
+        request: Optional request body with odoo_fields_check
         credentials: Bearer access token
         db: Database session
-
+    
     Returns:
-        Current user and tenant information
+        {
+            "user": {...},
+            "tenant": {...},
+            "partner_id": 14,
+            "employee_id": 5,
+            "groups": ["base.group_user", ...],
+            "is_admin": true,
+            "is_internal_user": true,
+            "company_ids": [1, 3, 5],
+            "current_company_id": 1,
+            "odoo_fields_data": {...}  // if requested
+        }
     """
     access_token = credentials.credentials
 
@@ -364,7 +519,8 @@ async def get_tenant_user_info(
             detail="Tenant not found"
         )
 
-    return {
+    # Base response
+    response = {
         "user": {
             "id": str(user.id),
             "email": user.email,
@@ -380,9 +536,148 @@ async def get_tenant_user_info(
             "slug": tenant.slug,
             "status": tenant.status.value,
             "odoo_url": tenant.odoo_url,
-            "odoo_database": tenant.odoo_database
-        }
+            "odoo_database": tenant.odoo_database,
+            "odoo_version": tenant.odoo_version
+        },
+        "partner_id": None,
+        "employee_id": None,
+        "groups": [],
+        "is_admin": False,
+        "is_internal_user": False,
+        "company_ids": [],
+        "current_company_id": None,
+        "odoo_fields_data": None
     }
+
+    # Fetch enhanced Odoo data
+    try:
+        from app.adapters.odoo_adapter import OdooAdapter
+        from app.core.encryption import encryption_service
+        
+        # Decrypt password
+        try:
+            decrypted_password = encryption_service.decrypt_value(tenant.odoo_password)
+        except Exception:
+            decrypted_password = tenant.odoo_password
+        
+        # Create Odoo adapter
+        adapter = OdooAdapter({
+            "url": tenant.odoo_url,
+            "database": tenant.odoo_database,
+            "username": tenant.odoo_username,
+            "password": decrypted_password,
+            "system_version": tenant.odoo_version
+        })
+        
+        # Authenticate
+        auth_result = await adapter.authenticate(tenant.odoo_username, decrypted_password)
+        
+        if auth_result.get("success") and user.odoo_user_id:
+            odoo_user_id = user.odoo_user_id
+            
+            # Fetch user data from Odoo
+            user_data = await adapter.search_read(
+                model="res.users",
+                domain=[["id", "=", odoo_user_id]],
+                fields=["partner_id", "groups_id", "company_ids", "company_id"]
+            )
+            
+            if user_data and len(user_data) > 0:
+                odoo_user = user_data[0]
+                
+                # Extract partner_id
+                if "partner_id" in odoo_user and odoo_user["partner_id"]:
+                    response["partner_id"] = odoo_user["partner_id"][0] if isinstance(odoo_user["partner_id"], list) else odoo_user["partner_id"]
+                
+                # Extract groups
+                if "groups_id" in odoo_user and odoo_user["groups_id"]:
+                    group_ids = odoo_user["groups_id"]
+                    
+                    # Fetch group XML IDs
+                    groups_data = await adapter.search_read(
+                        model="res.groups",
+                        domain=[["id", "in", group_ids]],
+                        fields=["name", "full_name"]
+                    )
+                    
+                    # Get XML IDs for groups
+                    ir_model_data = await adapter.search_read(
+                        model="ir.model.data",
+                        domain=[["model", "=", "res.groups"], ["res_id", "in", group_ids]],
+                        fields=["module", "name", "res_id"]
+                    )
+                    
+                    # Map res_id to xml_id
+                    xml_id_map = {}
+                    for data in ir_model_data:
+                        res_id = data.get("res_id")
+                        module = data.get("module", "")
+                        name = data.get("name", "")
+                        if res_id and module and name:
+                            xml_id_map[res_id] = f"{module}.{name}"
+                    
+                    # Build groups list with XML IDs
+                    response["groups"] = [xml_id_map.get(gid, f"group_{gid}") for gid in group_ids]
+                    
+                    # Check if admin
+                    response["is_admin"] = any("base.group_system" in g or "base.group_erp_manager" in g for g in response["groups"])
+                    response["is_internal_user"] = any("base.group_user" in g for g in response["groups"])
+                
+                # Extract company_ids
+                if "company_ids" in odoo_user and odoo_user["company_ids"]:
+                    response["company_ids"] = odoo_user["company_ids"]
+                
+                # Extract current_company_id
+                if "company_id" in odoo_user and odoo_user["company_id"]:
+                    response["current_company_id"] = odoo_user["company_id"][0] if isinstance(odoo_user["company_id"], list) else odoo_user["company_id"]
+            
+            # Fetch employee_id
+            try:
+                employee_data = await adapter.search_read(
+                    model="hr.employee",
+                    domain=[["user_id", "=", odoo_user_id]],
+                    fields=["id"],
+                    limit=1
+                )
+                if employee_data and len(employee_data) > 0:
+                    response["employee_id"] = employee_data[0]["id"]
+            except Exception as emp_error:
+                logger.warning(f"Could not fetch employee_id: {str(emp_error)}")
+            
+            # Handle custom fields if requested
+            if request and request.odoo_fields_check:
+                try:
+                    # Fetch custom fields data directly
+                    custom_data = await adapter.search_read(
+                        model=request.odoo_fields_check.model,
+                        domain=[["id", "=", odoo_user_id]],
+                        fields=request.odoo_fields_check.list_fields
+                    )
+                    
+                    if custom_data and len(custom_data) > 0:
+                        # Extract only the requested fields that have values
+                        odoo_fields_data = {}
+                        for field in request.odoo_fields_check.list_fields:
+                            if field in custom_data[0]:
+                                value = custom_data[0].get(field)
+                                # Only include if value is not False/None/empty
+                                if value not in [False, None, ""]:
+                                    odoo_fields_data[field] = value
+                        
+                        # Only set if we have data
+                        if odoo_fields_data:
+                            response["odoo_fields_data"] = odoo_fields_data
+                
+                except Exception as fields_error:
+                    logger.error(f"Error fetching custom fields: {str(fields_error)}")
+        
+        await adapter.disconnect()
+    
+    except Exception as e:
+        logger.error(f"Error fetching Odoo data: {str(e)}")
+        # Continue with base response even if Odoo fetch fails
+    
+    return response
 
 
 @router.post("/tenant/logout")

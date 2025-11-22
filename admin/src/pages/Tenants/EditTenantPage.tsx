@@ -142,6 +142,11 @@ const EditTenantPage: React.FC = () => {
       const result = await tenantService.testConnection(id);
       setTestResult(result);
       
+      // Update odoo_version field if detected
+      if (result.success && result.version) {
+        form.setFieldsValue({ odoo_version: result.version });
+      }
+      
       // Scroll to test result after a short delay to ensure it's rendered
       setTimeout(() => {
         testResultRef.current?.scrollIntoView({ 
@@ -370,16 +375,16 @@ const EditTenantPage: React.FC = () => {
             <Input placeholder="your_database" />
           </Form.Item>
 
-          <Form.Item name="odoo_version" label="Odoo Version">
-            <Select placeholder="Select Odoo version">
-              <Option value="19.0">Odoo 19.0</Option>
-              <Option value="18.0">Odoo 18.0</Option>
-              <Option value="17.0">Odoo 17.0</Option>
-              <Option value="16.0">Odoo 16.0</Option>
-              <Option value="15.0">Odoo 15.0</Option>
-              <Option value="14.0">Odoo 14.0</Option>
-              <Option value="13.0">Odoo 13.0</Option>
-            </Select>
+          <Form.Item 
+            name="odoo_version" 
+            label="Odoo Version"
+            tooltip="Auto-detected from test connection"
+          >
+            <Input 
+              placeholder="e.g., 16.0 (auto-detected)" 
+              disabled
+              style={{ color: '#888' }}
+            />
           </Form.Item>
 
           <Form.Item

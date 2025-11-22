@@ -67,7 +67,7 @@ apiClient.interceptors.response.use(
       // Unauthorized - clear token and redirect to login
       localStorage.removeItem(STORAGE_KEYS.TOKEN);
       localStorage.removeItem(STORAGE_KEYS.ADMIN);
-      window.location.href = '/login';
+      window.location.href = '/admin/login';
     }
     return Promise.reject(error);
   }

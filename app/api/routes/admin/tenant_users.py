@@ -142,6 +142,18 @@ async def create_tenant_user(
             detail="Tenant not found"
         )
 
+    # Check max_users limit
+    result = await db.execute(
+        select(TenantUser).where(TenantUser.tenant_id == user_data.tenant_id)
+    )
+    current_users_count = len(result.scalars().all())
+    
+    if current_users_count >= tenant.max_users:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Maximum number of users ({tenant.max_users}) reached for this tenant"
+        )
+    
     # Check if email already exists for this tenant
     result = await db.execute(
         select(TenantUser).where(
@@ -155,6 +167,21 @@ async def create_tenant_user(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already exists for this tenant"
         )
+    
+    # Check if odoo_user_id already exists for this tenant
+    if user_data.odoo_user_id:
+        result = await db.execute(
+            select(TenantUser).where(
+                TenantUser.tenant_id == user_data.tenant_id,
+                TenantUser.odoo_user_id == user_data.odoo_user_id
+            )
+        )
+        existing_odoo_user = result.scalar_one_or_none()
+        if existing_odoo_user:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Odoo user ID {user_data.odoo_user_id} is already linked to another BridgeCore user ({existing_odoo_user.email}) in this tenant. Each Odoo user can only have one BridgeCore account per tenant."
+            )
 
     # Create user
     user = TenantUser(

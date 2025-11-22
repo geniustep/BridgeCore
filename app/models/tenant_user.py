@@ -1,7 +1,7 @@
 """
 Tenant user model - users within each tenant
 """
-from sqlalchemy import Column, String, Boolean, DateTime, Enum, Integer, ForeignKey
+from sqlalchemy import Column, String, Boolean, DateTime, Enum, Integer, ForeignKey, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 import uuid
@@ -39,6 +39,15 @@ class TenantUser(Base, TimestampMixin):
     # Relationships
     tenant = relationship("Tenant", back_populates="users")
     usage_logs = relationship("UsageLog", back_populates="user", cascade="all, delete-orphan")
+
+    # Constraints
+    __table_args__ = (
+        UniqueConstraint(
+            'tenant_id', 
+            'odoo_user_id',
+            name='uq_tenant_odoo_user'
+        ),
+    )
 
     def __repr__(self):
         return f"<TenantUser(id={self.id}, email='{self.email}', tenant_id={self.tenant_id})>"

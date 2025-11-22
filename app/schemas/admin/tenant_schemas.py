@@ -29,6 +29,7 @@ class TenantCreate(BaseModel):
     # Optional overrides
     max_requests_per_day: Optional[int] = Field(None, ge=0)
     max_requests_per_hour: Optional[int] = Field(None, ge=0)
+    max_users: int = Field(5, ge=1, le=1000, description="Maximum number of users allowed")
     allowed_models: Optional[List[str]] = Field(default_factory=list)
     allowed_features: Optional[List[str]] = Field(default_factory=list)
 
@@ -65,6 +66,7 @@ class TenantUpdate(BaseModel):
     # Limits
     max_requests_per_day: Optional[int] = Field(None, ge=0)
     max_requests_per_hour: Optional[int] = Field(None, ge=0)
+    max_users: Optional[int] = Field(None, ge=1, le=1000)
     allowed_models: Optional[List[str]] = None
     allowed_features: Optional[List[str]] = None
 
@@ -97,6 +99,7 @@ class TenantResponse(BaseModel):
     # Limits
     max_requests_per_day: Optional[int]
     max_requests_per_hour: Optional[int]
+    max_users: int
     allowed_models: List[str]
     allowed_features: List[str]
 

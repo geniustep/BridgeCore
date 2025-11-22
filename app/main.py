@@ -21,7 +21,8 @@ from app.api.routes.admin import (
     tenant_users as admin_tenant_users,
     plans as admin_plans,
     analytics as admin_analytics,
-    logs as admin_logs
+    logs as admin_logs,
+    odoo_helpers as admin_odoo_helpers
 )
 from app.modules.webhook import router as webhook_router_v1
 from app.modules.webhook import router_v2 as webhook_router_v2
@@ -146,6 +147,7 @@ app.include_router(admin_tenant_users.router)  # /admin/tenant-users/*
 app.include_router(admin_plans.router)  # /admin/plans/*
 app.include_router(admin_analytics.router)  # /admin/analytics/*
 app.include_router(admin_logs.router)  # /admin/logs/*
+app.include_router(admin_odoo_helpers.router)  # /admin/odoo-helpers/*
 
 # Webhook routers (NEW)
 app.include_router(webhook_router_v1.router)  # /api/v1/webhooks/*

@@ -417,25 +417,118 @@ class TenantService:
                     }
                     result["details"]["query_error"] = str(query_error)
 
-                # Step 4: Try to get Odoo version
+                # Step 4: Try to get Odoo version using authenticated session
                 try:
                     import httpx
-                    async with httpx.AsyncClient(timeout=10.0) as client:
-                        version_url = f"{tenant.odoo_url.rstrip('/')}/web/webclient/version_info"
-                        version_response = await client.get(version_url)
+                    version_url = f"{tenant.odoo_url.rstrip('/')}/web/webclient/version_info"
+                    
+                    # Use the authenticated session from adapter
+                    headers = {
+                        "Content-Type": "application/json",
+                    }
+                    cookies = {}
+                    
+                    # Add session cookie if available
+                    if session_id:
+                        cookies["session_id"] = session_id
+                    
+                    async with httpx.AsyncClient(timeout=10.0, cookies=cookies) as client:
+                        version_response = await client.post(version_url, headers=headers, json={})
                         if version_response.status_code == 200:
                             version_data = version_response.json()
-                            result["version"] = version_data.get("server_version", "Unknown")
-                            result["details"]["server_serie"] = version_data.get("server_serie")
+                            if isinstance(version_data, dict) and "result" in version_data:
+                                version_info = version_data["result"]
+                                result["version"] = version_info.get("server_version", "Unknown")
+                                result["details"]["server_serie"] = version_info.get("server_serie")
+                                logger.info(f"Detected Odoo version: {result['version']}")
+                            else:
+                                result["version"] = version_data.get("server_version", "Unknown")
+                                result["details"]["server_serie"] = version_data.get("server_serie")
+                                logger.info(f"Detected Odoo version: {result['version']}")
                 except Exception as version_error:
-                    logger.debug(f"Could not get version info: {str(version_error)}")
-                    # Version info is optional
+                    logger.warning(f"Could not get version info: {str(version_error)}")
+                    # Version info is optional, try alternative method
+                    try:
+                        # Try getting version from ir.config_parameter
+                        version_params = await adapter.search_read(
+                            model="ir.config_parameter",
+                            domain=[["key", "=", "base.version"]],
+                            fields=["value"]
+                        )
+                        if version_params and len(version_params) > 0:
+                            result["version"] = version_params[0].get("value", "Unknown")
+                            logger.info(f"Detected Odoo version from config: {result['version']}")
+                    except Exception as alt_error:
+                        logger.debug(f"Alternative version detection also failed: {str(alt_error)}")
 
                 # Success!
                 result["success"] = True
                 result["message"] = f"Connection successful - Authenticated as {result['user_info'].get('name', result['user_info'].get('username'))} in database '{tenant.odoo_database}'"
                 result["details"]["authenticated"] = True
                 result["details"]["uid"] = uid
+                
+                # Update tenant with Odoo version if detected
+                if result.get("version") and tenant.odoo_version != result["version"]:
+                    tenant.odoo_version = result["version"]
+                    await self.session.commit()
+                    logger.info(f"Updated tenant {tenant.name} with Odoo version: {result['version']}")
+                
+                # Create admin user automatically if not exists
+                from app.repositories.tenant_user_repository import TenantUserRepository
+                from app.core.security import get_password_hash
+                from app.models.tenant_user import TenantUser
+                from sqlalchemy import select
+                import secrets
+                
+                tenant_user_repo = TenantUserRepository(self.session)
+                
+                # Check if admin user already exists for this tenant
+                existing_users = await tenant_user_repo.get_by_tenant_id(tenant.id)
+                
+                # Also check if this odoo_user_id is already linked
+                odoo_user_check = await self.session.execute(
+                    select(TenantUser).where(
+                        TenantUser.tenant_id == tenant.id,
+                        TenantUser.odoo_user_id == uid
+                    )
+                )
+                existing_odoo_link = odoo_user_check.scalar_one_or_none()
+                
+                if not existing_users or len(existing_users) == 0:
+                    if existing_odoo_link:
+                        # This odoo_user_id is already linked (shouldn't happen, but safety check)
+                        result["admin_user_created"] = False
+                        result["admin_user_exists"] = True
+                        result["message"] = f"Connection successful! Admin user already exists with this Odoo account."
+                        logger.warning(f"Odoo user {uid} already linked to {existing_odoo_link.email}")
+                    else:
+                        # Create admin user with Odoo credentials
+                        logger.info(f"Creating admin user for tenant {tenant.name}")
+                        
+                        # Generate a random password or use Odoo password
+                        admin_password = secrets.token_urlsafe(16)
+                        
+                        admin_user = TenantUser(
+                            tenant_id=tenant.id,
+                            email=f"admin@{tenant.slug}.bridgecore.internal",  # Default email
+                            full_name=result["user_info"].get("name", "Administrator"),
+                            hashed_password=get_password_hash(admin_password),
+                            role="admin",
+                            is_active=True,
+                            odoo_user_id=uid
+                        )
+                        
+                        self.session.add(admin_user)
+                        await self.session.commit()
+                        
+                        result["admin_user_created"] = True
+                        result["admin_email"] = admin_user.email
+                        result["admin_password"] = admin_password  # Return password only once
+                        
+                        logger.info(f"Admin user created: {admin_user.email}")
+                else:
+                    result["admin_user_created"] = False
+                    result["admin_user_exists"] = True
                 
                 await adapter.disconnect()
                 return result

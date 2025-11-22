@@ -51,6 +51,7 @@ services:
       - ./logs:/app/logs
     networks:
       - bridgecore-network
+      - traefik-web
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -157,6 +158,7 @@ services:
       - /app/node_modules
     networks:
       - bridgecore-network
+      - traefik-web
     restart: unless-stopped
     depends_on:
       - fastapi
@@ -188,3 +190,6 @@ volumes:
 networks:
   bridgecore-network:
     driver: bridge
+  traefik-web:
+    external: true
+    name: routy-traefik_web

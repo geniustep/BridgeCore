@@ -47,6 +47,7 @@ class Tenant(Base, TimestampMixin):
     # Rate Limits (override plan defaults if set)
     max_requests_per_day = Column(Integer, nullable=True)
     max_requests_per_hour = Column(Integer, nullable=True)
+    max_users = Column(Integer, nullable=False, default=5)  # Maximum number of users allowed
 
     # Allowed Features
     allowed_models = Column(JSON, nullable=False, default=list)  # Empty = all models

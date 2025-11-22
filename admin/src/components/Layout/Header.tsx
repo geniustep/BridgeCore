@@ -23,7 +23,7 @@ const Header: React.FC<HeaderProps> = ({ collapsed, onToggle }) => {
 
   const handleLogout = async () => {
     await logout();
-    navigate('/login');
+    navigate('login');
   };
 
   const userMenuItems: MenuProps['items'] = [

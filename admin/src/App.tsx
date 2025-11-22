@@ -20,7 +20,8 @@ import MainLayout from './components/Layout/MainLayout';
 // Protected Route Component
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated } = useAuthStore();
-  return isAuthenticated ? <>{children}</> : <Navigate to="/login" replace />;
+  // Use relative path since basename is /admin
+  return isAuthenticated ? <>{children}</> : <Navigate to="login" replace />;
 };
 
 const App: React.FC = () => {
@@ -43,7 +44,7 @@ const App: React.FC = () => {
         <Routes>
           {/* Public Routes */}
           <Route
-            path="/login"
+            path="login"
             element={
               isAuthenticated ? <Navigate to="/" replace /> : <LoginPage />
             }

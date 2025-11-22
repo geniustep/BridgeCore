@@ -40,8 +40,10 @@ ENV/
 .env.local
 
 # Logs
-logs/
-*.log
+logs/*.log
+logs/*.json
+logs/*.zip
+!logs/.gitkeep
 
 # Database
 *.db
