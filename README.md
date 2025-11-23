@@ -414,6 +414,25 @@ docker-compose ps
 
 ### Option 2: Local Development 💻
 
+#### Quick Installation (Automated)
+
+```bash
+# 1. Clone repository
+git clone https://github.com/geniustep/BridgeCore.git
+cd BridgeCore
+
+# 2. Run automated installation script
+bash scripts/install_dependencies.sh
+
+# This script will:
+# - Check Python version (requires 3.11+)
+# - Create virtual environment
+# - Install all dependencies
+# - Verify installation
+```
+
+#### Manual Installation
+
 ```bash
 # 1. Clone repository
 git clone https://github.com/geniustep/BridgeCore.git
@@ -423,6 +442,7 @@ cd BridgeCore
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
+pip install -r requirements-dev.txt  # For development
 
 # 3. Setup environment
 cp env.example .env
@@ -645,7 +665,11 @@ Each tenant represents a company/client using BridgeCore:
 
 ### Rate Limiting
 
-Rate limits are enforced per-tenant using Redis:
+Rate limits are enforced at multiple levels:
+
+#### 1. Per-Tenant Rate Limiting (Subscription-based)
+
+Rate limits are enforced per-tenant using Redis based on subscription plan:
 
 ```python
 # Hourly limit check
@@ -670,6 +694,32 @@ if daily_count > tenant.max_requests_per_day:
         detail="Daily rate limit exceeded"
     )
 ```
+
+#### 2. Per-Endpoint Rate Limiting (Operation-based)
+
+Each Odoo endpoint has intelligent rate limiting based on operation cost:
+
+| Operation Type | Rate Limit | Reason |
+|----------------|------------|--------|
+| Search operations | 100/minute | Lightweight, read-only |
+| Read operations | 80/minute | Database reads |
+| Create operations | 30/minute | More expensive, writes |
+| Write operations | 40/minute | Updates |
+| Delete operations | 20/minute | Critical operations |
+| Advanced operations | 50/minute | Complex queries |
+| Name operations | 100/minute | Lightweight lookups |
+| View operations | 60/minute | Metadata retrieval |
+| Web operations | 50/minute | Web-optimized |
+| Permission checks | 100/minute | Lightweight |
+| Utility operations | 80/minute | Field metadata |
+| Custom methods | 30/minute | Can be expensive |
+
+**Rate Limit Headers:**
+When a rate limit is exceeded, the API returns:
+- `429 Too Many Requests` status code
+- `Retry-After` header with seconds until retry
+- `X-RateLimit-Limit` header with the limit
+- `X-RateLimit-Remaining` header with remaining requests
 
 ### Tenant Isolation
 
@@ -922,9 +972,68 @@ POST /api/v1/auth/tenant/logout
 Authorization: Bearer {tenant_token}
 ```
 
-#### Odoo Operations
+#### Odoo Operations (26 Complete Operations)
 
 **🔐 Security**: All Odoo operations use tenant JWT tokens. Odoo credentials are automatically fetched from tenant database - **NO credentials needed in requests!**
+
+**🚦 Rate Limiting**: All endpoints have intelligent rate limiting based on operation type:
+- Search operations: 100/minute (lightweight)
+- Read operations: 80/minute
+- Create operations: 30/minute (more expensive)
+- Write operations: 40/minute
+- Delete operations: 20/minute
+- Advanced operations: 50/minute
+- Custom methods: 30/minute
+
+**Available Operations:**
+
+**CRUD Operations** (`/api/v1/odoo/`):
+- `POST /create` - Create new record(s)
+- `POST /read` - Read records by ID
+- `POST /write` - Update existing records
+- `POST /unlink` - Delete records
+
+**Search Operations** (`/api/v1/odoo/`):
+- `POST /search` - Search for records (returns IDs only)
+- `POST /search_read` - Search and read in one operation
+- `POST /search_count` - Count records matching domain
+
+**Advanced Operations** (`/api/v1/odoo/`):
+- `POST /onchange` - Trigger onchange methods
+- `POST /read_group` - Group and aggregate data
+- `POST /copy` - Duplicate records
+- `POST /exists` - Check if records exist
+
+**Name Operations** (`/api/v1/odoo/`):
+- `POST /name_get` - Get display names
+- `POST /name_search` - Search by name
+- `POST /name_create` - Quick create from name
+
+**View Operations** (`/api/v1/odoo/`):
+- `POST /fields_view_get` - Get view definition
+- `POST /load_views` - Load multiple views
+- `POST /get_views` - Get specific views
+
+**Web Operations** (`/api/v1/odoo/`):
+- `POST /web_read` - Web-optimized read
+- `POST /web_save` - Web-optimized save
+- `POST /web_search_read` - Web-optimized search_read
+
+**Permission Operations** (`/api/v1/odoo/`):
+- `POST /check_access_rights` - Check access permissions
+- `POST /check_field_access` - Check field-level permissions
+
+**Utility Operations** (`/api/v1/odoo/`):
+- `POST /fields_get` - Get field definitions
+- `POST /default_get` - Get default values
+- `POST /get_metadata` - Get record metadata
+
+**Custom Methods** (`/api/v1/odoo/`):
+- `POST /call_method` - Call custom model methods
+- `POST /call_kw` - Call methods with keyword arguments
+- `POST /execute` - Execute arbitrary methods
+
+**Example Requests:**
 
 ```bash
 # Search & Read
@@ -978,28 +1087,6 @@ Content-Type: application/json
 {
     "model": "res.partner",
     "ids": [1, 2, 3]
-}
-
-# Call Method
-POST /api/v1/odoo/call
-Authorization: Bearer {tenant_token}
-Content-Type: application/json
-
-{
-    "model": "sale.order",
-    "method": "action_confirm",
-    "args": [[1, 2, 3]],
-    "kwargs": {}
-}
-
-# Get Fields
-POST /api/v1/odoo/fields_get
-Authorization: Bearer {tenant_token}
-Content-Type: application/json
-
-{
-    "model": "res.partner",
-    "fields": ["name", "email", "phone"]
 }
 ```
 
@@ -1768,11 +1855,17 @@ pytest
 # Run with coverage
 pytest --cov=app --cov-report=html
 
+# Run unit tests only
+pytest tests/unit/ -v
+
+# Run integration tests
+pytest tests/integration/ -v
+
 # Run specific test file
-pytest tests/test_auth.py
+pytest tests/unit/test_auth.py -v
 
 # Run specific test
-pytest tests/test_auth.py::test_tenant_login
+pytest tests/unit/test_auth.py::test_tenant_login -v
 
 # Run with verbose output
 pytest -v
@@ -1781,18 +1874,46 @@ pytest -v
 pytest -x
 ```
 
+### Integration Tests with Real Odoo
+
+Integration tests require a running Odoo instance. Set environment variables:
+
+```bash
+export ODOO_URL="https://demo.odoo.com"
+export ODOO_DATABASE="demo"
+export ODOO_USERNAME="admin"
+export ODOO_PASSWORD="admin"
+
+# Run integration tests
+pytest tests/integration/odoo/test_odoo_integration.py -v
+
+# Skip integration tests if Odoo not available
+pytest tests/integration/odoo/test_odoo_integration.py -v -m "not integration"
+```
+
+**Integration Tests Coverage:**
+- ✅ CRUD operations (create, read, update, delete)
+- ✅ Search operations (search, search_read, search_count)
+- ✅ Utility operations (fields_get, default_get, get_metadata)
+- ✅ Advanced operations (onchange, read_group)
+- ✅ Name operations (name_search, name_get)
+
 ### Test Structure
 
 ```
 tests/
-├── conftest.py                 # Pytest fixtures
-├── test_auth.py                # Authentication tests
-├── test_tenants.py             # Tenant management tests
-├── test_odoo.py                # Odoo operations tests
-├── test_webhooks.py            # Webhook system tests
-├── test_sync.py                # Smart sync tests
-├── test_analytics.py           # Analytics tests
-└── test_rate_limiting.py       # Rate limiting tests
+├── unit/                       # Unit tests
+│   ├── odoo/                   # Odoo operations unit tests
+│   │   ├── test_crud_ops.py
+│   │   ├── test_search_ops.py
+│   │   └── test_advanced_ops.py
+│   ├── test_auth.py            # Authentication tests
+│   ├── test_tenants.py         # Tenant management tests
+│   └── test_rate_limiting.py   # Rate limiting tests
+├── integration/                # Integration tests
+│   └── odoo/                   # Odoo integration tests
+│       └── test_odoo_integration.py
+└── conftest.py                 # Pytest fixtures
 ```
 
 ---
@@ -1848,6 +1969,44 @@ docs/
 We welcome contributions! Here's how you can help:
 
 ### Development Setup
+
+#### Quick Setup (Recommended)
+
+```bash
+# 1. Fork and clone
+git clone https://github.com/yourusername/BridgeCore.git
+cd BridgeCore
+
+# 2. Run automated installation
+bash scripts/install_dependencies.sh
+
+# 3. Setup environment
+cp env.example .env
+# Edit .env with your configuration
+
+# 4. Run database migrations
+alembic upgrade head
+
+# 5. Seed initial data
+python scripts/seed_admin.py
+
+# 6. Setup pre-commit hooks
+pre-commit install
+
+# 7. Create feature branch
+git checkout -b feature/amazing-feature
+
+# 8. Make changes and test
+pytest
+
+# 9. Commit and push
+git commit -m 'Add amazing feature'
+git push origin feature/amazing-feature
+
+# 10. Open Pull Request
+```
+
+#### Manual Setup
 
 ```bash
 # 1. Fork and clone
@@ -1964,6 +2123,10 @@ SOFTWARE.
 - [x] Multi-tenant architecture with complete isolation
 - [x] Admin panel with React dashboard
 - [x] Per-tenant rate limiting with Redis
+- [x] **26 Complete Odoo API Operations** (CRUD, Search, Advanced, Name, View, Web, Permission, Utility, Custom)
+- [x] **Intelligent Rate Limiting** per operation type
+- [x] **Integration Tests** with real Odoo instances
+- [x] **Automated Installation Script** for easy setup
 - [x] Usage tracking and analytics
 - [x] Error logging with resolution workflow
 - [x] Background tasks with Celery

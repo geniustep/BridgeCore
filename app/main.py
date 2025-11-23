@@ -15,6 +15,7 @@ from app.utils.logger import setup_logging
 from app.middleware.logging_middleware import logging_middleware
 from app.db.session import init_db, close_db
 from app.api.routes import auth, health, systems, batch, barcode, files, websocket, odoo
+from app.api.routes.odoo import router as odoo_operations_router
 from app.api.routes.admin import (
     auth as admin_auth,
     tenants as admin_tenants,
@@ -133,7 +134,8 @@ app.add_middleware(
 # Include routers
 app.include_router(health.router)
 app.include_router(auth.router)
-app.include_router(odoo.router)  # New unified Odoo operations endpoint
+app.include_router(odoo.router)  # Legacy Odoo operations endpoint
+app.include_router(odoo_operations_router, prefix="/api/v1")  # New 26 Odoo operations
 app.include_router(systems.router)
 app.include_router(batch.router)
 app.include_router(barcode.router)

@@ -26,6 +26,19 @@ RATE_LIMITS = {
     "batch": "10/minute",         # Batch operations
     "file": "30/minute",          # File operations
     "report": "20/minute",        # Report generation
+    # Odoo Operations Rate Limits
+    "odoo_search": "100/minute",      # Search operations (lightweight)
+    "odoo_read": "80/minute",         # Read operations
+    "odoo_create": "30/minute",        # Create operations (more expensive)
+    "odoo_write": "40/minute",        # Update operations
+    "odoo_delete": "20/minute",       # Delete operations
+    "odoo_advanced": "50/minute",     # Advanced operations (onchange, read_group)
+    "odoo_name": "100/minute",        # Name operations (lightweight)
+    "odoo_view": "60/minute",         # View operations
+    "odoo_web": "50/minute",         # Web operations
+    "odoo_permission": "100/minute",  # Permission checks (lightweight)
+    "odoo_utility": "80/minute",       # Utility operations
+    "odoo_method": "30/minute",       # Custom method calls (can be expensive)
 }
 
 
