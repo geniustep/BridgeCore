@@ -7,7 +7,6 @@ from typing import Optional
 from fastapi import Depends, HTTPException, status, Header, Request
 from loguru import logger
 
-from app.core.security import get_current_user
 from app.services.odoo import (
     OdooOperationsService,
     SearchOperations,
