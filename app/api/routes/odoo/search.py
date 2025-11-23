@@ -1,7 +1,7 @@
 """
 Search operation routes for Odoo API
 """
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from loguru import logger
 
 from app.services.odoo import SearchOperations
@@ -21,14 +21,17 @@ from app.core.exceptions import (
     OdooModelNotFoundException,
 )
 from app.services.odoo.base import OdooExecutionError
+from app.core.rate_limiter import limiter, get_rate_limit
 from .deps import get_search_service
 
 router = APIRouter()
 
 
 @router.post("/search", response_model=SearchResponse)
+@limiter.limit(get_rate_limit("odoo_search"))
 async def search_records(
-    request: SearchRequest,
+    request: Request,
+    body: SearchRequest,
     service: SearchOperations = Depends(get_search_service)
 ):
     """
@@ -49,12 +52,12 @@ async def search_records(
     """
     try:
         ids = await service.search(
-            model=request.model,
-            domain=request.domain,
-            limit=request.limit,
-            offset=request.offset,
-            order=request.order,
-            context=request.context
+            model=body.model,
+            domain=body.domain,
+            limit=body.limit,
+            offset=body.offset,
+            order=body.order,
+            context=body.context
         )
 
         return SearchResponse(
@@ -94,8 +97,10 @@ async def search_records(
 
 
 @router.post("/search_read", response_model=SearchReadResponse)
+@limiter.limit(get_rate_limit("odoo_search"))
 async def search_read_records(
-    request: SearchReadRequest,
+    request: Request,
+    body: SearchReadRequest,
     service: SearchOperations = Depends(get_search_service)
 ):
     """
@@ -116,13 +121,13 @@ async def search_read_records(
     """
     try:
         records = await service.search_read(
-            model=request.model,
-            domain=request.domain,
-            fields=request.fields,
-            limit=request.limit,
-            offset=request.offset,
-            order=request.order,
-            context=request.context
+            model=body.model,
+            domain=body.domain,
+            fields=body.fields,
+            limit=body.limit,
+            offset=body.offset,
+            order=body.order,
+            context=body.context
         )
 
         return SearchReadResponse(
@@ -162,8 +167,10 @@ async def search_read_records(
 
 
 @router.post("/search_count", response_model=SearchCountResponse)
+@limiter.limit(get_rate_limit("odoo_search"))
 async def count_records(
-    request: SearchCountRequest,
+    request: Request,
+    body: SearchCountRequest,
     service: SearchOperations = Depends(get_search_service)
 ):
     """
@@ -181,9 +188,9 @@ async def count_records(
     """
     try:
         count = await service.search_count(
-            model=request.model,
-            domain=request.domain,
-            context=request.context
+            model=body.model,
+            domain=body.domain,
+            context=body.context
         )
 
         return SearchCountResponse(

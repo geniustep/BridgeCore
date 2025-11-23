@@ -1,7 +1,7 @@
 """
 CRUD operation routes for Odoo API
 """
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from loguru import logger
 
 from app.services.odoo import CRUDOperations
@@ -22,14 +22,17 @@ from app.core.exceptions import (
     OdooRecordNotFoundException,
 )
 from app.services.odoo.base import OdooExecutionError
+from app.core.rate_limiter import limiter, get_rate_limit
 from .deps import get_crud_service
 
 router = APIRouter()
 
 
 @router.post("/create", response_model=CreateResponse)
+@limiter.limit(get_rate_limit("odoo_create"))
 async def create_record(
-    request: CreateRequest,
+    request: Request,
+    body: CreateRequest,
     service: CRUDOperations = Depends(get_crud_service)
 ):
     """
@@ -58,12 +61,12 @@ async def create_record(
     """
     try:
         result = await service.create(
-            model=request.model,
-            values=request.values,
-            context=request.context
+            model=body.model,
+            values=body.values,
+            context=body.context
         )
 
-        if isinstance(request.values, list):
+        if isinstance(body.values, list):
             return CreateResponse(success=True, ids=result)
         else:
             return CreateResponse(success=True, id=result)
@@ -99,8 +102,10 @@ async def create_record(
 
 
 @router.post("/read", response_model=ReadResponse)
+@limiter.limit(get_rate_limit("odoo_read"))
 async def read_records(
-    request: ReadRequest,
+    request: Request,
+    body: ReadRequest,
     service: CRUDOperations = Depends(get_crud_service)
 ):
     """
@@ -119,10 +124,10 @@ async def read_records(
     """
     try:
         records = await service.read(
-            model=request.model,
-            ids=request.ids,
-            fields=request.fields,
-            context=request.context
+            model=body.model,
+            ids=body.ids,
+            fields=body.fields,
+            context=body.context
         )
 
         return ReadResponse(
@@ -162,8 +167,10 @@ async def read_records(
 
 
 @router.post("/write", response_model=WriteResponse)
+@limiter.limit(get_rate_limit("odoo_write"))
 async def write_records(
-    request: WriteRequest,
+    request: Request,
+    body: WriteRequest,
     service: CRUDOperations = Depends(get_crud_service)
 ):
     """
@@ -180,10 +187,10 @@ async def write_records(
     """
     try:
         success = await service.write(
-            model=request.model,
-            ids=request.ids,
-            values=request.values,
-            context=request.context
+            model=body.model,
+            ids=body.ids,
+            values=body.values,
+            context=body.context
         )
 
         return WriteResponse(success=True, updated=success)
@@ -219,8 +226,10 @@ async def write_records(
 
 
 @router.post("/unlink", response_model=UnlinkResponse)
+@limiter.limit(get_rate_limit("odoo_delete"))
 async def unlink_records(
-    request: UnlinkRequest,
+    request: Request,
+    body: UnlinkRequest,
     service: CRUDOperations = Depends(get_crud_service)
 ):
     """
@@ -238,9 +247,9 @@ async def unlink_records(
     """
     try:
         success = await service.unlink(
-            model=request.model,
-            ids=request.ids,
-            context=request.context
+            model=body.model,
+            ids=body.ids,
+            context=body.context
         )
 
         return UnlinkResponse(success=True, deleted=success)
