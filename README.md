@@ -30,6 +30,7 @@
 - [Usage Examples](#-usage-examples)
 - [Webhook System](#-webhook-system)
 - [Smart Sync](#-smart-sync)
+- [Offline Sync](#-offline-sync)
 - [Security](#-security)
 - [Configuration](#-configuration)
 - [Deployment](#-deployment)
@@ -51,6 +52,7 @@ BridgeCore is an enterprise-grade multi-tenant middleware platform that serves a
 - **🏢 Multi-Tenant Management**: Manage multiple companies/clients from a single platform with complete data isolation
 - **⚡ Real-time Sync**: Track all Odoo changes via webhook system with smart multi-user synchronization
 - **📊 Smart Synchronization**: Efficient incremental sync per user/device with automatic conflict resolution
+- **📱 Offline-First Sync**: NEW! Complete offline sync with push/pull, conflict resolution, and batch processing
 - **🎨 Admin Dashboard**: Full React-based admin panel for comprehensive platform management
 - **🚦 Rate Limiting**: Per-tenant rate limits with Redis for fair resource allocation
 - **📈 Analytics**: Comprehensive usage tracking, reporting, and business intelligence
@@ -68,10 +70,11 @@ Offer Odoo integration as a service to multiple clients:
 
 #### 2. **Mobile Apps**
 Connect Flutter apps to Odoo ERP for multiple tenants:
-- Offline-first mobile applications
-- Real-time data synchronization
-- Push notifications for changes
-- Field service management
+- **Offline-first mobile applications** with complete sync system
+- Real-time data synchronization with conflict resolution
+- Push notifications for critical changes
+- Field service management with offline capabilities
+- Multi-device sync per user
 
 #### 3. **Enterprise Solutions**
 Centralized middleware for large-scale deployments:
@@ -1451,6 +1454,139 @@ Authorization: Bearer {tenant_token}
 POST /api/v2/sync/reset?user_id=1&device_id=device_123
 Authorization: Bearer {tenant_token}
 ```
+
+---
+
+## 📱 Offline Sync
+
+**NEW!** BridgeCore now includes a comprehensive offline-first synchronization system for mobile and web applications.
+
+### Features
+
+✅ **Push/Pull Architecture**: Upload local changes and download server updates
+✅ **Conflict Detection**: Automatic conflict detection with multiple resolution strategies
+✅ **Dependency Resolution**: Handles complex relationships between records
+✅ **Batch Processing**: Efficient processing of multiple changes
+✅ **Incremental Sync**: Only sync what changed since last time
+✅ **Multi-Device Support**: Each device maintains independent sync state
+✅ **Model Filtering**: Sync only relevant data for each app type
+✅ **Tenant Isolation**: Complete data isolation per tenant
+
+### Use Cases
+
+- **Mobile Sales App**: Work offline, sync when back online
+- **Delivery App**: Update deliveries offline, sync at end of day
+- **Warehouse App**: Inventory updates in areas with poor connectivity
+- **Field Service**: Work at remote locations without internet
+- **CRM App**: Update leads and opportunities offline
+
+### API Endpoints
+
+```bash
+# Push local changes to server
+POST /api/v1/offline-sync/push
+Authorization: Bearer {token}
+
+{
+  "device_id": "iphone-abc123",
+  "changes": [
+    {
+      "local_id": "local_uuid_1",
+      "action": "create",
+      "model": "sale.order",
+      "data": {
+        "partner_id": 42,
+        "order_line": []
+      },
+      "local_timestamp": "2025-11-24T10:30:00Z"
+    }
+  ],
+  "conflict_strategy": "server_wins"
+}
+
+# Pull server changes
+POST /api/v1/offline-sync/pull
+Authorization: Bearer {token}
+
+{
+  "device_id": "iphone-abc123",
+  "app_type": "sales_app",
+  "last_event_id": 1250,
+  "limit": 100
+}
+
+# Resolve conflicts
+POST /api/v1/offline-sync/resolve-conflicts
+Authorization: Bearer {token}
+
+{
+  "device_id": "iphone-abc123",
+  "resolutions": [
+    {
+      "local_id": "local_uuid_5",
+      "strategy": "client_wins"
+    }
+  ]
+}
+
+# Get sync state
+GET /api/v1/offline-sync/state?device_id=iphone-abc123
+Authorization: Bearer {token}
+
+# Reset sync state (force full sync)
+POST /api/v1/offline-sync/reset?device_id=iphone-abc123
+Authorization: Bearer {token}
+```
+
+### Conflict Resolution Strategies
+
+| Strategy | Description | Use Case |
+|----------|-------------|----------|
+| **server_wins** | Server data takes precedence (default) | Settings, configurations |
+| **client_wins** | Client data overwrites server | User preferences, drafts |
+| **manual** | Return conflict for user to resolve | Critical business data |
+| **merge** | Merge both versions | Non-overlapping field changes |
+| **newest_wins** | Most recent change wins | Time-sensitive data |
+
+### Complete Sync Flow
+
+```typescript
+// 1. Initialize sync service
+const syncService = new OfflineSyncService({
+  baseUrl: 'https://api.bridgecore.com',
+  deviceId: 'iphone-abc123',
+  appType: 'sales_app',
+});
+
+// 2. Authenticate
+await syncService.login(email, password);
+
+// 3. Start background sync
+syncService.startBackgroundSync();
+
+// 4. Manual sync
+async function manualSync() {
+  // Push local changes
+  const pushResult = await syncService.push();
+
+  // Handle conflicts
+  if (pushResult.conflicts > 0) {
+    await handleConflicts(pushResult);
+  }
+
+  // Pull server changes
+  const pullResult = await syncService.pull();
+
+  // Apply to local database
+  await applyEventsToDatabase(pullResult.events);
+}
+```
+
+### Documentation
+
+📖 **Complete Offline Sync Guide**: [docs/guides/OFFLINE_SYNC_GUIDE.md](./docs/guides/OFFLINE_SYNC_GUIDE.md)
+🌍 **دليل باللغة العربية**: [docs/guides/OFFLINE_SYNC_GUIDE_AR.md](./docs/guides/OFFLINE_SYNC_GUIDE_AR.md)
+💻 **Flutter Example**: [examples/flutter/offline_sync_service.dart](./examples/flutter/offline_sync_service.dart)
 
 ---
 
