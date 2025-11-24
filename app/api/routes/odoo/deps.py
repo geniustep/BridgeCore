@@ -7,6 +7,7 @@ from typing import Optional
 from fastapi import Depends, HTTPException, status, Header, Request
 from loguru import logger
 
+from app.core.encryption import encryption_service
 from app.services.odoo import (
     OdooOperationsService,
     SearchOperations,
@@ -65,12 +66,19 @@ async def get_odoo_credentials(
     tenant = getattr(request.state, 'tenant', None)
 
     if tenant:
+        # Decrypt Odoo password
+        try:
+            decrypted_password = encryption_service.decrypt_value(tenant.odoo_password)
+        except Exception as e:
+            logger.warning(f"Password decryption failed: {str(e)}")
+            decrypted_password = tenant.odoo_password
+
         # Use tenant's Odoo configuration
         return {
             "odoo_url": tenant.odoo_url,
             "database": tenant.odoo_database,
             "username": tenant.odoo_username,
-            "password": tenant.odoo_password,  # Should be decrypted by middleware
+            "password": decrypted_password,
         }
 
     # Fall back to headers

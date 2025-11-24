@@ -91,10 +91,10 @@ class InvalidSyncTokenException(SyncException):
 class OdooConnectionException(BridgeCoreException):
     """Raised when Odoo connection fails"""
 
-    def __init__(self, message: str, *, url: Optional[str] = None):
+    def __init__(self, message: str, *, url: Optional[str] = None, code: Optional[str] = None):
         super().__init__(
             message,
-            code="ODOO_CONNECTION_ERROR",
+            code=code or "ODOO_CONNECTION_ERROR",
             details={"url": url} if url else {}
         )
 
