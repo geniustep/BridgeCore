@@ -27,6 +27,7 @@ from app.api.routes.admin import (
 )
 from app.modules.webhook import router as webhook_router_v1
 from app.modules.webhook import router_v2 as webhook_router_v2
+from app.modules.offline_sync import router as offline_sync_router
 from app.core.rate_limiter import limiter, _rate_limit_exceeded_handler
 from app.core.monitoring import (
     init_sentry,
@@ -154,6 +155,9 @@ app.include_router(admin_odoo_helpers.router)  # /admin/odoo-helpers/*
 # Webhook routers (NEW)
 app.include_router(webhook_router_v1.router)  # /api/v1/webhooks/*
 app.include_router(webhook_router_v2.router)  # /api/v2/sync/*
+
+# Offline Sync router (NEW)
+app.include_router(offline_sync_router)  # /api/v1/offline-sync/*
 
 # Add metrics endpoint
 app.add_api_route("/metrics", metrics_endpoint, methods=["GET"], tags=["Monitoring"])
