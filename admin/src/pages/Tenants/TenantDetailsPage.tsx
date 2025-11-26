@@ -36,6 +36,7 @@ import {
 import { tenantService } from '@/services/tenant.service';
 import { Tenant } from '@/types';
 import TenantSystemsList from '@/components/Systems/TenantSystemsList';
+import AddSystemModal from '@/components/Systems/AddSystemModal';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 
@@ -49,6 +50,8 @@ const TenantDetailsPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [tenant, setTenant] = useState<Tenant | null>(null);
   const [testing, setTesting] = useState(false);
+  const [addSystemModalVisible, setAddSystemModalVisible] = useState(false);
+  const [systemsRefreshKey, setSystemsRefreshKey] = useState(0);
 
   useEffect(() => {
     if (id) {
@@ -387,6 +390,54 @@ const TenantDetailsPage: React.FC = () => {
               </Descriptions.Item>
             </Descriptions>
           </Card>
+
+          {/* Quick Actions for External Systems */}
+          <Card
+            title={
+              <Space>
+                <ApiOutlined />
+                Quick Connect External Systems
+              </Space>
+            }
+            style={{ marginTop: 16 }}
+          >
+            <Space wrap size="large">
+              <Button
+                type="primary"
+                size="large"
+                icon={<ApiOutlined />}
+                onClick={() => setAddSystemModalVisible(true)}
+                style={{ 
+                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                  border: 'none',
+                  minWidth: 160
+                }}
+              >
+                🎓 Add Moodle
+              </Button>
+              <Button
+                size="large"
+                icon={<ApiOutlined />}
+                onClick={() => setAddSystemModalVisible(true)}
+                style={{ minWidth: 160 }}
+              >
+                💼 Add SAP
+              </Button>
+              <Button
+                size="large"
+                icon={<ApiOutlined />}
+                onClick={() => setAddSystemModalVisible(true)}
+                style={{ minWidth: 160 }}
+              >
+                ☁️ Add Salesforce
+              </Button>
+            </Space>
+            <Divider style={{ margin: '16px 0' }} />
+            <Text type="secondary">
+              Connect external systems to enable seamless data integration and synchronization.
+              Already using Odoo by default.
+            </Text>
+          </Card>
         </div>
       ),
     },
@@ -397,7 +448,7 @@ const TenantDetailsPage: React.FC = () => {
           <ApiOutlined /> External Systems
         </span>
       ),
-      children: <TenantSystemsList tenantId={id!} />,
+      children: <TenantSystemsList key={systemsRefreshKey} tenantId={id!} />,
     },
   ];
 
@@ -454,6 +505,18 @@ const TenantDetailsPage: React.FC = () => {
 
       {/* Tabs for different sections */}
       <Tabs defaultActiveKey="overview" items={tabItems} />
+
+      {/* Add System Modal */}
+      <AddSystemModal
+        visible={addSystemModalVisible}
+        tenantId={id!}
+        onCancel={() => setAddSystemModalVisible(false)}
+        onSuccess={() => {
+          setAddSystemModalVisible(false);
+          setSystemsRefreshKey(prev => prev + 1); // Refresh systems list
+          message.success('System added successfully!');
+        }}
+      />
     </div>
   );
 };
