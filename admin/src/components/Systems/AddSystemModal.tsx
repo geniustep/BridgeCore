@@ -13,14 +13,12 @@ import {
   message,
   Alert,
   Divider,
-  Spin
 } from 'antd';
 import { CheckCircleOutlined, CloseCircleOutlined } from '@ant-design/icons';
 import systemService from '../../services/system.service';
 import { ExternalSystem, SystemType, TenantSystemCreate } from '../../types';
 
 const { Option } = Select;
-const { TextArea } = Input;
 
 interface AddSystemModalProps {
   visible: boolean;

@@ -26,12 +26,25 @@ import {
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import systemService from '../../services/system.service';
-import { TenantSystem, ExternalSystem } from '../../types';
+import { TenantSystem } from '../../types';
 import AddSystemModal from './AddSystemModal';
 import EditSystemModal from './EditSystemModal';
-import moment from 'moment';
 
-const { Text, Paragraph } = Typography;
+const { Text } = Typography;
+
+// Helper function to get relative time
+const getRelativeTime = (dateString: string): string => {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+  const diffDays = Math.floor(diffHours / 24);
+  
+  if (diffHours < 1) return 'just now';
+  if (diffHours < 24) return `${diffHours} hours ago`;
+  if (diffDays < 7) return `${diffDays} days ago`;
+  return date.toLocaleDateString();
+};
 
 interface TenantSystemsListProps {
   tenantId: string;
@@ -149,12 +162,14 @@ const TenantSystemsList: React.FC<TenantSystemsListProps> = ({ tenantId }) => {
     }
 
     if (system.last_successful_connection) {
-      const lastSuccess = moment(system.last_successful_connection);
-      const hoursSince = moment().diff(lastSuccess, 'hours');
+      const lastSuccess = new Date(system.last_successful_connection);
+      const now = new Date();
+      const hoursSince = Math.floor((now.getTime() - lastSuccess.getTime()) / (1000 * 60 * 60));
+      const relativeTime = getRelativeTime(system.last_successful_connection);
 
       if (hoursSince < 24) {
         return (
-          <Tooltip title={`Last connected: ${lastSuccess.fromNow()}`}>
+          <Tooltip title={`Last connected: ${relativeTime}`}>
             <Tag color="green" icon={<CheckCircleOutlined />}>
               Connected
             </Tag>
@@ -228,7 +243,7 @@ const TenantSystemsList: React.FC<TenantSystemsListProps> = ({ tenantId }) => {
           {record.last_connection_test && (
             <div>
               <Text type="secondary" style={{ fontSize: '11px' }}>
-                Last tested: {moment(record.last_connection_test).fromNow()}
+                Last tested: {getRelativeTime(record.last_connection_test)}
               </Text>
             </div>
           )}

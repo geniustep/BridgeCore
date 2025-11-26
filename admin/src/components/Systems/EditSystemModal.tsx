@@ -10,7 +10,6 @@ import {
   Button,
   message,
   Alert,
-  Space
 } from 'antd';
 import { CheckCircleOutlined, CloseCircleOutlined } from '@ant-design/icons';
 import systemService from '../../services/system.service';
