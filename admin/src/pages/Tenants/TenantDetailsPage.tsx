@@ -331,7 +331,7 @@ const TenantDetailsPage: React.FC = () => {
               </Descriptions.Item>
             </Descriptions>
 
-            {tenant.allowed_models && tenant.allowed_models.length > 0 && (
+            {Array.isArray(tenant.allowed_models) && tenant.allowed_models.length > 0 && (
               <>
                 <Divider orientation="left">Allowed Models</Divider>
                 <Space wrap>
@@ -344,7 +344,7 @@ const TenantDetailsPage: React.FC = () => {
               </>
             )}
 
-            {tenant.allowed_features && tenant.allowed_features.length > 0 && (
+            {Array.isArray(tenant.allowed_features) && tenant.allowed_features.length > 0 && (
               <>
                 <Divider orientation="left">Allowed Features</Divider>
                 <Space wrap>
