@@ -291,7 +291,7 @@ const TenantDetailsPage: React.FC = () => {
                 )}
               </Descriptions.Item>
               <Descriptions.Item label="Max Requests/Day">
-                <Text strong>{tenant.max_requests_per_day.toLocaleString()}</Text>
+                <Text strong>{tenant.max_requests_per_day?.toLocaleString() || 'Unlimited'}</Text>
               </Descriptions.Item>
               <Descriptions.Item label="Max Requests/Hour">
                 <Text strong>{tenant.max_requests_per_hour?.toLocaleString() || 'Unlimited'}</Text>
