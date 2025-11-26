@@ -192,7 +192,7 @@ class TenantSystemRepository(BaseRepository[TenantSystem]):
         """Update connection test results"""
         from datetime import datetime
 
-        connection = await self.get(connection_id)
+        connection = await self.get_by_id(connection_id)
         if connection:
             connection.last_connection_test = datetime.utcnow()
             if success:

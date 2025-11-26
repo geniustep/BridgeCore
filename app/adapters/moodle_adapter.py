@@ -166,14 +166,26 @@ class MoodleAdapter(BaseAdapter):
         flattened = {}
 
         for key, value in params.items():
-            full_key = f"{prefix}{key}" if prefix else key
+            # Build the full key with proper bracket closing
+            if prefix:
+                # If prefix ends with '[', we're in a list context, add index and key
+                if prefix.endswith('['):
+                    full_key = f"{prefix}{key}]"
+                else:
+                    full_key = f"{prefix}[{key}]"
+            else:
+                full_key = key
 
             if isinstance(value, dict):
-                flattened.update(self._flatten_params(value, f"{full_key}["))
+                # For nested dicts, add '[' to continue nesting
+                nested_prefix = f"{full_key}[" if not full_key.endswith(']') else f"{full_key}["
+                flattened.update(self._flatten_params(value, nested_prefix))
             elif isinstance(value, list):
                 for i, item in enumerate(value):
                     if isinstance(item, dict):
-                        flattened.update(self._flatten_params(item, f"{full_key}[{i}]["))
+                        # For dicts in lists, use format: key[i][
+                        list_prefix = f"{full_key}[{i}]["
+                        flattened.update(self._flatten_params(item, list_prefix))
                     else:
                         flattened[f"{full_key}[{i}]"] = item
             else:

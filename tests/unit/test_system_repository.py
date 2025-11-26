@@ -195,7 +195,7 @@ class TestTenantSystemRepository:
         """Test update_connection_status with success"""
         mock_session.commit = AsyncMock()
 
-        with patch.object(TenantSystemRepository, 'get', return_value=sample_tenant_system):
+        with patch.object(TenantSystemRepository, 'get_by_id', return_value=sample_tenant_system):
             repo = TenantSystemRepository(mock_session)
             await repo.update_connection_status(
                 sample_tenant_system.id,
@@ -211,7 +211,7 @@ class TestTenantSystemRepository:
         mock_session.commit = AsyncMock()
         error_msg = "Connection timeout"
 
-        with patch.object(TenantSystemRepository, 'get', return_value=sample_tenant_system):
+        with patch.object(TenantSystemRepository, 'get_by_id', return_value=sample_tenant_system):
             repo = TenantSystemRepository(mock_session)
             await repo.update_connection_status(
                 sample_tenant_system.id,

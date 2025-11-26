@@ -113,3 +113,30 @@ class EncryptionService:
 
 # Global encryption service instance
 encryption_service = EncryptionService()
+
+
+# Helper functions for backward compatibility
+def encrypt_data(data: Dict[str, Any]) -> str:
+    """
+    Encrypt configuration data (helper function)
+    
+    Args:
+        data: Configuration dictionary
+        
+    Returns:
+        Encrypted string
+    """
+    return encryption_service.encrypt_config(data)
+
+
+def decrypt_data(encrypted_data: str) -> Dict[str, Any]:
+    """
+    Decrypt configuration data (helper function)
+    
+    Args:
+        encrypted_data: Encrypted string
+        
+    Returns:
+        Decrypted configuration dictionary
+    """
+    return encryption_service.decrypt_config(encrypted_data)
