@@ -32,6 +32,7 @@ import {
   CheckCircleOutlined,
   ClockCircleOutlined,
   CloseCircleOutlined,
+  EyeOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useTenantStore } from '@/store/tenant.store';
@@ -314,21 +315,24 @@ const TenantsListPage: React.FC = () => {
     {
       title: 'Actions',
       key: 'actions',
-      width: 150,
+      width: 180,
       fixed: 'right' as const,
       render: (_: any, record: Tenant) => (
-        <Space>
-          <Button
-            type="primary"
-            size="small"
-            icon={<EditOutlined />}
-            onClick={() => navigate(`/tenants/${record.id}/edit`)}
-          >
-            View Details
-          </Button>
+        <Space size="small">
+          <Tooltip title="View tenant details and settings">
+            <Button
+              type="primary"
+              size="middle"
+              icon={<EyeOutlined />}
+              onClick={() => navigate(`/tenants/${record.id}/edit`)}
+            >
+              Details
+            </Button>
+          </Tooltip>
           <Dropdown menu={getActionMenu(record)} trigger={['click']}>
             <Button
-              type="text"
+              type="default"
+              size="middle"
               icon={<MoreOutlined />}
               onClick={(e) => e.stopPropagation()}
             />
