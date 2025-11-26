@@ -31,12 +31,13 @@ class Tenant(Base, TimestampMixin):
     contact_email = Column(String(255), nullable=False)
     contact_phone = Column(String(50))
 
-    # Odoo Connection
-    odoo_url = Column(String(500), nullable=False)
-    odoo_database = Column(String(255), nullable=False)
+    # Odoo Connection (DEPRECATED - use connected_systems instead)
+    # Kept for backward compatibility with existing tenants
+    odoo_url = Column(String(500), nullable=True)
+    odoo_database = Column(String(255), nullable=True)
     odoo_version = Column(String(50))
-    odoo_username = Column(String(255), nullable=False)
-    odoo_password = Column(String(500), nullable=False)  # Should be encrypted
+    odoo_username = Column(String(255), nullable=True)
+    odoo_password = Column(String(500), nullable=True)  # Should be encrypted
 
     # Status & Subscription
     status = Column(Enum(TenantStatus), default=TenantStatus.TRIAL, nullable=False, index=True)
@@ -65,6 +66,9 @@ class Tenant(Base, TimestampMixin):
     error_logs = relationship("ErrorLog", back_populates="tenant", cascade="all, delete-orphan")
     usage_stats = relationship("UsageStats", back_populates="tenant", cascade="all, delete-orphan")
     audit_logs = relationship("AdminAuditLog", back_populates="target_tenant")
+
+    # Multi-System Support (NEW)
+    connected_systems = relationship("TenantSystem", back_populates="tenant", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<Tenant(id={self.id}, name='{self.name}', slug='{self.slug}', status='{self.status}')>"

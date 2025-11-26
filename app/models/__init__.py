@@ -16,6 +16,9 @@ from app.models.error_log import ErrorLog, ErrorSeverity
 from app.models.usage_stats import UsageStats
 from app.models.admin_audit_log import AdminAuditLog
 
+# Multi-System Support (NEW)
+from app.models.external_system import ExternalSystem, TenantSystem, SystemType, SystemStatus
+
 __all__ = [
     # Original models
     "User",
@@ -35,4 +38,9 @@ __all__ = [
     "ErrorSeverity",
     "UsageStats",
     "AdminAuditLog",
+    # Multi-System Support
+    "ExternalSystem",
+    "TenantSystem",
+    "SystemType",
+    "SystemStatus",
 ]

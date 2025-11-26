@@ -1,0 +1,3 @@
+"""
+Moodle API routes package
+"""

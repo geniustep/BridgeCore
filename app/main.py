@@ -23,11 +23,13 @@ from app.api.routes.admin import (
     plans as admin_plans,
     analytics as admin_analytics,
     logs as admin_logs,
-    odoo_helpers as admin_odoo_helpers
+    odoo_helpers as admin_odoo_helpers,
+    systems as admin_systems
 )
 from app.modules.webhook import router as webhook_router_v1
 from app.modules.webhook import router_v2 as webhook_router_v2
 from app.modules.offline_sync import router as offline_sync_router
+from app.api.routes.moodle.main import router as moodle_router
 from app.core.rate_limiter import limiter, _rate_limit_exceeded_handler
 from app.core.monitoring import (
     init_sentry,
@@ -74,27 +76,35 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=settings.APP_NAME,
     description="""
-    ## FastAPI Middleware API
+    ## BridgeCore Multi-System Middleware API
 
-    This API serves as a middleware layer between Flutter applications and external systems (ERP/CRM).
+    This API serves as a middleware layer between Flutter applications and multiple external systems (ERP/CRM/LMS).
 
     ### Features
 
     * 🔐 **Secure Authentication**: JWT-based authentication
     * 🔄 **Data Unification**: Automatic field mapping
-    * 🎯 **Multi-System Support**: Odoo, SAP, Salesforce
+    * 🎯 **Multi-System Support**: Odoo ERP, Moodle LMS, SAP, Salesforce
     * ⚡ **High Performance**: Caching + Connection pooling
     * 📝 **Audit Trail**: Complete operation logging
+    * 🏢 **Multi-Tenancy**: Isolated tenant data and connections
+
+    ### Supported Systems
+
+    * **Odoo ERP**: Complete CRUD operations, 26 endpoints
+    * **Moodle LMS**: Course, user, and enrolment management
+    * **SAP ERP**: Coming soon
+    * **Salesforce CRM**: Coming soon
 
     ### Quick Start
 
-    1. Get a token from `/auth/login`
+    1. Get a token from `/api/v1/auth/tenant/login`
     2. Use token in header: `Authorization: Bearer {token}`
-    3. Start using the CRUD endpoints
+    3. Start using the system-specific endpoints
 
     ### Support
 
-    For help: support@example.com
+    For help: support@bridgecore.com
     """,
     version="1.0.0",
     lifespan=lifespan,
@@ -151,6 +161,7 @@ app.include_router(admin_plans.router)  # /admin/plans/*
 app.include_router(admin_analytics.router)  # /admin/analytics/*
 app.include_router(admin_logs.router)  # /admin/logs/*
 app.include_router(admin_odoo_helpers.router)  # /admin/odoo-helpers/*
+app.include_router(admin_systems.router)  # /admin/systems/*
 
 # Webhook routers (NEW)
 app.include_router(webhook_router_v1.router)  # /api/v1/webhooks/*
@@ -158,6 +169,9 @@ app.include_router(webhook_router_v2.router)  # /api/v2/sync/*
 
 # Offline Sync router (NEW)
 app.include_router(offline_sync_router)  # /api/v1/offline-sync/*
+
+# Moodle router (NEW)
+app.include_router(moodle_router, prefix="/api/v1")  # /api/v1/moodle/*
 
 # Add metrics endpoint
 app.add_api_route("/metrics", metrics_endpoint, methods=["GET"], tags=["Monitoring"])
