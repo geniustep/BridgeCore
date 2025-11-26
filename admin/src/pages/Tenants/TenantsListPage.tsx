@@ -141,8 +141,8 @@ const TenantsListPage: React.FC = () => {
       {
         key: 'view',
         label: 'View Details',
-        icon: <EditOutlined />,
-        onClick: () => navigate(`/tenants/${record.id}/edit`),
+        icon: <EyeOutlined />,
+        onClick: () => navigate(`/tenants/${record.id}`),
       },
       {
         key: 'edit',
@@ -218,7 +218,7 @@ const TenantsListPage: React.FC = () => {
           <Button
             type="link"
             style={{ padding: 0, height: 'auto', fontWeight: 500 }}
-            onClick={() => navigate(`/tenants/${record.id}/edit`)}
+            onClick={() => navigate(`/tenants/${record.id}`)}
           >
             {record.name}
           </Button>
@@ -324,7 +324,7 @@ const TenantsListPage: React.FC = () => {
               type="primary"
               size="middle"
               icon={<EyeOutlined />}
-              onClick={() => navigate(`/tenants/${record.id}/edit`)}
+              onClick={() => navigate(`/tenants/${record.id}`)}
             >
               Details
             </Button>

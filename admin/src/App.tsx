@@ -9,6 +9,7 @@ import LoginPage from './pages/Auth/LoginPage';
 import DashboardPage from './pages/Dashboard/DashboardPage';
 import TenantsListPage from './pages/Tenants/TenantsListPage';
 import CreateTenantPage from './pages/Tenants/CreateTenantPage';
+import TenantDetailsPage from './pages/Tenants/TenantDetailsPage';
 import EditTenantPage from './pages/Tenants/EditTenantPage';
 import TenantUsersPage from './pages/Tenants/TenantUsersPage';
 import AnalyticsPage from './pages/Analytics/AnalyticsPage';
@@ -85,6 +86,7 @@ const App: React.FC = () => {
             <Route index element={<DashboardPage />} />
             <Route path="tenants" element={<TenantsListPage />} />
             <Route path="tenants/create" element={<CreateTenantPage />} />
+            <Route path="tenants/:id" element={<TenantDetailsPage />} />
             <Route path="tenants/:id/edit" element={<EditTenantPage />} />
             <Route path="tenants/:tenantId/users" element={<TenantUsersPage />} />
             <Route path="analytics" element={<AnalyticsPage />} />
