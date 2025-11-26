@@ -169,9 +169,8 @@ const TenantDetailsPage: React.FC = () => {
             <Col xs={24} sm={12} lg={6}>
               <Card>
                 <Statistic
-                  title="Requests Today"
-                  value={tenant.current_requests_count || 0}
-                  suffix={`/ ${tenant.max_requests_per_day}`}
+                  title="Max Requests/Day"
+                  value={tenant.max_requests_per_day || 0}
                   prefix={<ApiOutlined />}
                 />
               </Card>
@@ -179,9 +178,8 @@ const TenantDetailsPage: React.FC = () => {
             <Col xs={24} sm={12} lg={6}>
               <Card>
                 <Statistic
-                  title="Requests This Hour"
-                  value={0}
-                  suffix={`/ ${tenant.max_requests_per_hour}`}
+                  title="Max Requests/Hour"
+                  value={tenant.max_requests_per_hour || 0}
                   prefix={<ClockCircleOutlined />}
                 />
               </Card>
@@ -296,10 +294,7 @@ const TenantDetailsPage: React.FC = () => {
                 <Text strong>{tenant.max_requests_per_day.toLocaleString()}</Text>
               </Descriptions.Item>
               <Descriptions.Item label="Max Requests/Hour">
-                <Text strong>{tenant.max_requests_per_hour.toLocaleString()}</Text>
-              </Descriptions.Item>
-              <Descriptions.Item label="Current Usage">
-                <Text>{tenant.current_requests_count || 0}</Text>
+                <Text strong>{tenant.max_requests_per_hour?.toLocaleString() || 'Unlimited'}</Text>
               </Descriptions.Item>
               <Descriptions.Item label="Trial Ends At" span={2}>
                 {tenant.trial_ends_at ? (
