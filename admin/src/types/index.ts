@@ -231,3 +231,87 @@ export interface ConnectionTestResult {
     [key: string]: any;
   };
 }
+
+// ============= Multi-System Types =============
+
+export type SystemType = 'odoo' | 'moodle' | 'sap' | 'salesforce' | 'dynamics' | 'custom';
+export type SystemStatus = 'active' | 'inactive' | 'error' | 'testing';
+
+export interface ExternalSystem {
+  id: string;
+  system_type: SystemType;
+  name: string;
+  description: string | null;
+  version: string | null;
+  status: SystemStatus;
+  is_enabled: boolean;
+  default_config: Record<string, any> | null;
+  capabilities: Record<string, any>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TenantSystem {
+  id: string;
+  tenant_id: string;
+  system_id: string;
+  connection_config: Record<string, any>;
+  is_active: boolean;
+  is_primary: boolean;
+  last_connection_test: string | null;
+  last_successful_connection: string | null;
+  connection_error: string | null;
+  custom_config: Record<string, any> | null;
+  created_at: string;
+  updated_at: string;
+  external_system?: ExternalSystem;
+}
+
+export interface TenantSystemCreate {
+  tenant_id: string;
+  system_id: string;
+  connection_config: Record<string, any>;
+  is_active?: boolean;
+  is_primary?: boolean;
+  custom_config?: Record<string, any>;
+}
+
+export interface TenantSystemUpdate {
+  connection_config?: Record<string, any>;
+  is_active?: boolean;
+  is_primary?: boolean;
+  custom_config?: Record<string, any>;
+}
+
+export interface OdooConnectionConfig {
+  url: string;
+  database: string;
+  username: string;
+  password: string;
+}
+
+export interface MoodleConnectionConfig {
+  url: string;
+  token: string;
+  service?: string;
+}
+
+export interface SystemConnectionTestRequest {
+  system_type: SystemType;
+  connection_config: Record<string, any>;
+}
+
+export interface SystemConnectionTestResponse {
+  success: boolean;
+  message: string;
+  system_info?: {
+    type: string;
+    sitename?: string;
+    version?: string;
+    url?: string;
+    uid?: number;
+    database?: string;
+  };
+  error?: string;
+  tested_at: string;
+}

@@ -1,8 +1,8 @@
-# BridgeCore - Enterprise Multi-Tenant Middleware Platform
+# BridgeCore - Enterprise Multi-System Middleware Platform
 
 <div align="center">
 
-**A powerful, production-ready middleware platform with multi-tenant management, built with FastAPI to bridge Flutter applications with Odoo ERP/CRM systems**
+**A powerful, production-ready multi-system middleware platform built with FastAPI to bridge Flutter applications with multiple external systems (Odoo ERP, Moodle LMS, SAP, Salesforce, and more)**
 
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-green.svg)](https://fastapi.tiangolo.com)
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org)
@@ -45,15 +45,17 @@
 
 ## 🌟 Overview
 
-BridgeCore is an enterprise-grade multi-tenant middleware platform that serves as a unified interface between Flutter mobile applications and Odoo ERP/CRM systems. It provides comprehensive tenant management, real-time change tracking, smart synchronization, and a full-featured admin dashboard.
+BridgeCore is an enterprise-grade multi-tenant middleware platform that serves as a unified interface between Flutter mobile applications and multiple external systems including **Odoo ERP**, **Moodle LMS**, **SAP**, **Salesforce**, and more. It provides comprehensive tenant management, real-time change tracking, smart synchronization, and a full-featured admin dashboard with multi-system support.
 
 ### 🎯 What BridgeCore Does
 
+- **🔌 Multi-System Integration**: Connect to Odoo ERP, Moodle LMS, SAP, Salesforce, and more from a single platform
 - **🏢 Multi-Tenant Management**: Manage multiple companies/clients from a single platform with complete data isolation
 - **⚡ Real-time Sync**: Track all Odoo changes via webhook system with smart multi-user synchronization
 - **📊 Smart Synchronization**: Efficient incremental sync per user/device with automatic conflict resolution
-- **📱 Offline-First Sync**: NEW! Complete offline sync with push/pull, conflict resolution, and batch processing
-- **🎨 Admin Dashboard**: Full React-based admin panel for comprehensive platform management
+- **📱 Offline-First Sync**: Complete offline sync with push/pull, conflict resolution, and batch processing
+- **🎓 Moodle LMS Integration**: Full course, user, and enrolment management for educational platforms
+- **🎨 Admin Dashboard**: Full React-based admin panel for comprehensive platform and system management
 - **🚦 Rate Limiting**: Per-tenant rate limits with Redis for fair resource allocation
 - **📈 Analytics**: Comprehensive usage tracking, reporting, and business intelligence
 - **🔒 Secure**: JWT authentication with role-based access control and encryption
@@ -69,12 +71,21 @@ Offer Odoo integration as a service to multiple clients:
 - Multi-tenant isolation and security
 
 #### 2. **Mobile Apps**
-Connect Flutter apps to Odoo ERP for multiple tenants:
+Connect Flutter apps to multiple systems (Odoo ERP, Moodle LMS) for multiple tenants:
 - **Offline-first mobile applications** with complete sync system
 - Real-time data synchronization with conflict resolution
 - Push notifications for critical changes
 - Field service management with offline capabilities
 - Multi-device sync per user
+- **Educational apps** with Moodle LMS integration
+
+#### 2.1 **Educational Platforms**
+Connect educational institutions to Moodle LMS:
+- Course management and enrolment
+- Student and teacher management
+- Grade tracking and reporting
+- Assignment submission workflows
+- Learning analytics and progress tracking
 
 #### 3. **Enterprise Solutions**
 Centralized middleware for large-scale deployments:
@@ -94,26 +105,67 @@ Single platform managing multiple Odoo instances:
 
 | Challenge | BridgeCore Solution |
 |-----------|---------------------|
+| **Multiple Systems** | Single API for Odoo, Moodle, SAP, Salesforce, and more |
 | **Multiple Odoo Versions** | Version-agnostic API with automatic adaptation |
-| **Complex Authentication** | Unified JWT-based auth for all tenants |
+| **LMS Integration** | Full Moodle Web Services integration with 15+ endpoints |
+| **Complex Authentication** | Unified JWT-based auth for all tenants and systems |
 | **Rate Limiting** | Per-tenant limits with fair resource allocation |
 | **Real-time Sync** | Webhook system with smart multi-user sync |
 | **Monitoring** | Built-in analytics, logging, and metrics |
 | **Scalability** | Async architecture with Redis caching |
 | **Security** | Encryption, RBAC, audit logs |
-| **Admin Tools** | Full-featured React dashboard |
+| **Admin Tools** | Full-featured React dashboard with system management |
 
 ---
 
 ## ✨ Key Features
 
+### 🔌 Multi-System Architecture (NEW!)
+
+#### Supported Systems
+- **✅ Odoo ERP**: Full integration with 26+ endpoints
+- **✅ Moodle LMS**: Course, user, and enrolment management (15+ endpoints)
+- **🔄 SAP ERP**: Coming soon
+- **🔄 Salesforce CRM**: Coming soon
+- **🔄 Microsoft Dynamics**: Coming soon
+
+#### System Management
+- **Flexible Connections**: Each tenant can connect to multiple systems simultaneously
+- **Primary System**: Designate a primary system per tenant
+- **Connection Testing**: Built-in connection health checks
+- **Encrypted Configs**: All system credentials encrypted at rest
+- **System Adapters**: Unified interface for all external systems
+
+#### Moodle LMS Integration Features
+```
+📚 Course Management
+  • Create, update, delete courses
+  • Get course details and lists
+  • Get enrolled users per course
+
+👥 User Management
+  • Create and update Moodle users
+  • Search users by criteria
+  • User profile management
+
+🎓 Enrolment Management
+  • Enrol users in courses
+  • Manage roles (student, teacher)
+  • Track enrolment status
+
+📊 System Information
+  • Get site info and version
+  • Health checks and monitoring
+  • Call any Moodle Web Service function
+```
+
 ### 🏢 Multi-Tenant Architecture
 
 #### Tenant Isolation
 - **Complete Data Isolation**: Each tenant's data is completely isolated
-- **Separate Odoo Connections**: Each tenant connects to their own Odoo instance
+- **Multiple System Connections**: Each tenant connects to their own instances (Odoo, Moodle, etc.)
 - **Independent Configuration**: Per-tenant settings and customizations
-- **Secure Credentials**: Encrypted storage of Odoo credentials
+- **Secure Credentials**: Encrypted storage of all system credentials
 
 #### Subscription Management
 - **Multiple Plans**: Free, Starter, Professional, Enterprise
@@ -881,6 +933,139 @@ Authorization: Bearer {admin_token}
 # Get Odoo Users
 GET /admin/odoo-helpers/users/{tenant_id}?company_id=1
 Authorization: Bearer {admin_token}
+```
+
+### Moodle API Endpoints (NEW!)
+
+#### Course Management
+
+```bash
+# Get All Courses
+GET /api/v1/moodle/courses
+Authorization: Bearer {token}
+
+# Response
+[
+  {
+    "id": 2,
+    "fullname": "Introduction to Programming",
+    "shortname": "CS101",
+    "categoryid": 1,
+    "visible": 1,
+    "enrolledusercount": 45
+  }
+]
+
+# Create Course
+POST /api/v1/moodle/courses
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "fullname": "Web Development Basics",
+  "shortname": "WEB101",
+  "categoryid": 1,
+  "summary": "Learn HTML, CSS, and JavaScript",
+  "format": "topics",
+  "visible": 1
+}
+
+# Update Course
+PUT /api/v1/moodle/courses/{course_id}
+Authorization: Bearer {token}
+
+{
+  "fullname": "Advanced Web Development",
+  "visible": 1
+}
+
+# Delete Course
+DELETE /api/v1/moodle/courses/{course_id}
+Authorization: Bearer {token}
+
+# Get Enrolled Users
+GET /api/v1/moodle/courses/{course_id}/users
+Authorization: Bearer {token}
+
+# Enrol User in Course
+POST /api/v1/moodle/courses/{course_id}/enrol
+Authorization: Bearer {token}
+
+{
+  "user_id": 15,
+  "role_id": 5  # 5 = Student, 3 = Teacher
+}
+```
+
+#### User Management
+
+```bash
+# Get Users
+GET /api/v1/moodle/users?username=john
+Authorization: Bearer {token}
+
+# Create User
+POST /api/v1/moodle/users
+Authorization: Bearer {token}
+
+{
+  "username": "newstudent",
+  "password": "SecurePass123!",
+  "firstname": "Jane",
+  "lastname": "Smith",
+  "email": "jane@school.com",
+  "city": "Boston",
+  "country": "US"
+}
+
+# Update User
+PUT /api/v1/moodle/users/{user_id}
+Authorization: Bearer {token}
+
+{
+  "email": "newemail@school.com",
+  "city": "San Francisco"
+}
+
+# Delete User
+DELETE /api/v1/moodle/users/{user_id}
+Authorization: Bearer {token}
+```
+
+#### System Information
+
+```bash
+# Get Site Info
+GET /api/v1/moodle/site-info
+Authorization: Bearer {token}
+
+# Response
+{
+  "sitename": "Your School LMS",
+  "version": "4.1.5",
+  "userid": 2,
+  "siteurl": "https://lms.school.com"
+}
+
+# Check Connection Health
+GET /api/v1/moodle/health
+Authorization: Bearer {token}
+
+# Response
+{
+  "status": "connected",
+  "latency_ms": 145.32,
+  "timestamp": 1701020400
+}
+
+# Call Any Moodle Function
+POST /api/v1/moodle/call
+Authorization: Bearer {token}
+
+{
+  "function_name": "core_course_get_categories",
+  "params": {}
+}
 ```
 
 ### Tenant API Endpoints
