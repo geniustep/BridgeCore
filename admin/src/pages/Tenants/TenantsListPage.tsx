@@ -138,6 +138,12 @@ const TenantsListPage: React.FC = () => {
   const getActionMenu = (record: Tenant): MenuProps => ({
     items: [
       {
+        key: 'view',
+        label: 'View Details',
+        icon: <EditOutlined />,
+        onClick: () => navigate(`/tenants/${record.id}/edit`),
+      },
+      {
         key: 'edit',
         label: 'Edit',
         icon: <EditOutlined />,
@@ -308,16 +314,26 @@ const TenantsListPage: React.FC = () => {
     {
       title: 'Actions',
       key: 'actions',
-      width: 80,
+      width: 150,
       fixed: 'right' as const,
       render: (_: any, record: Tenant) => (
-        <Dropdown menu={getActionMenu(record)} trigger={['click']}>
+        <Space>
           <Button
-            type="text"
-            icon={<MoreOutlined />}
-            onClick={(e) => e.stopPropagation()}
-          />
-        </Dropdown>
+            type="primary"
+            size="small"
+            icon={<EditOutlined />}
+            onClick={() => navigate(`/tenants/${record.id}/edit`)}
+          >
+            View Details
+          </Button>
+          <Dropdown menu={getActionMenu(record)} trigger={['click']}>
+            <Button
+              type="text"
+              icon={<MoreOutlined />}
+              onClick={(e) => e.stopPropagation()}
+            />
+          </Dropdown>
+        </Space>
       ),
     },
   ];

@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { ConfigProvider } from 'antd';
 import { useAuthStore } from './store/auth.store';
+import { STORAGE_KEYS } from './config/api';
 
 // Pages
 import LoginPage from './pages/Auth/LoginPage';
@@ -19,9 +20,31 @@ import MainLayout from './components/Layout/MainLayout';
 
 // Protected Route Component
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, loadAdmin } = useAuthStore();
+  const [isChecking, setIsChecking] = React.useState(true);
+
+  React.useEffect(() => {
+    // Load admin from localStorage on mount
+    loadAdmin();
+    
+    // Check authentication after a brief delay to ensure store is updated
+    const timer = setTimeout(() => {
+      setIsChecking(false);
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [loadAdmin]);
+
+  // Show nothing while checking (prevents flash of login page)
+  if (isChecking) {
+    return null;
+  }
+
+  // Check both store and localStorage for authentication
+  const token = localStorage.getItem(STORAGE_KEYS.TOKEN);
+  const isAuth = isAuthenticated || !!token;
+
   // Use relative path since basename is /admin
-  return isAuthenticated ? <>{children}</> : <Navigate to="login" replace />;
+  return isAuth ? <>{children}</> : <Navigate to="login" replace />;
 };
 
 const App: React.FC = () => {
