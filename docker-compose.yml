@@ -70,7 +70,7 @@ services:
       - POSTGRES_DB=bridgecore
       - PGDATA=/var/lib/postgresql/data/pgdata
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"  # ربط البورت على localhost فقط للأمان
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql
@@ -89,7 +89,7 @@ services:
     container_name: bridgecore-redis
     command: sh -c "if [ -n \"$$REDIS_PASSWORD\" ]; then redis-server --appendonly yes --requirepass $$REDIS_PASSWORD; else redis-server --appendonly yes; fi"
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"  # ربط البورت على localhost فقط للأمان
     volumes:
       - redis_data:/data
     networks:
@@ -131,7 +131,7 @@ services:
     container_name: bridgecore-flower
     command: celery -A app.core.celery_app flower --port=5555
     ports:
-      - "5555:5555"
+      - "127.0.0.1:5555:5555"  # ربط البورت على localhost فقط للأمان
     environment:
       - CELERY_BROKER_URL=redis://redis:6379/1
       - CELERY_RESULT_BACKEND=redis://redis:6379/2

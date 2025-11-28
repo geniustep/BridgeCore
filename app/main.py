@@ -30,6 +30,8 @@ from app.modules.webhook import router as webhook_router_v1
 from app.modules.webhook import router_v2 as webhook_router_v2
 from app.modules.offline_sync import router as offline_sync_router
 from app.api.routes.moodle.main import router as moodle_router
+from app.api.routes.triggers import router as triggers_router
+from app.api.routes.notifications import router as notifications_router
 from app.core.rate_limiter import limiter, _rate_limit_exceeded_handler
 from app.core.monitoring import (
     init_sentry,
@@ -172,6 +174,10 @@ app.include_router(offline_sync_router)  # /api/v1/offline-sync/*
 
 # Moodle router (NEW)
 app.include_router(moodle_router, prefix="/api/v1")  # /api/v1/moodle/*
+
+# Triggers & Notifications routers (NEW)
+app.include_router(triggers_router)  # /api/v1/triggers/*
+app.include_router(notifications_router)  # /api/v1/notifications/*
 
 # Add metrics endpoint
 app.add_api_route("/metrics", metrics_endpoint, methods=["GET"], tags=["Monitoring"])

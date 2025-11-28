@@ -19,6 +19,13 @@ from app.models.admin_audit_log import AdminAuditLog
 # Multi-System Support (NEW)
 from app.models.external_system import ExternalSystem, TenantSystem, SystemType, SystemStatus
 
+# Triggers & Notifications (NEW)
+from app.models.trigger import Trigger, TriggerExecution, TriggerEvent, TriggerActionType, TriggerStatus
+from app.models.notification import (
+    Notification, NotificationPreference, DeviceToken,
+    NotificationType, NotificationPriority, NotificationChannel
+)
+
 __all__ = [
     # Original models
     "User",
@@ -43,4 +50,17 @@ __all__ = [
     "TenantSystem",
     "SystemType",
     "SystemStatus",
+    # Triggers
+    "Trigger",
+    "TriggerExecution",
+    "TriggerEvent",
+    "TriggerActionType",
+    "TriggerStatus",
+    # Notifications
+    "Notification",
+    "NotificationPreference",
+    "DeviceToken",
+    "NotificationType",
+    "NotificationPriority",
+    "NotificationChannel",
 ]
