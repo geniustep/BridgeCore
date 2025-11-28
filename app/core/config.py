@@ -41,6 +41,25 @@ class Settings(BaseSettings):
         default="https://odoo.geniura.com",
         env="ODOO_URL"
     )
+    
+    # Odoo Webhook API Key (for auto-webhook-odoo integration)
+    ODOO_WEBHOOK_API_KEY: str = Field(
+        default="",
+        env="ODOO_WEBHOOK_API_KEY",
+        description="API Key for authenticating with auto-webhook-odoo module"
+    )
+    
+    # Odoo Sync Settings
+    ODOO_SYNC_INTERVAL_SECONDS: int = Field(
+        default=30,
+        env="ODOO_SYNC_INTERVAL_SECONDS",
+        description="Interval for periodic sync from Odoo (in seconds)"
+    )
+    ODOO_SYNC_BATCH_SIZE: int = Field(
+        default=100,
+        env="ODOO_SYNC_BATCH_SIZE",
+        description="Number of events to pull per sync"
+    )
 
     # JWT
     JWT_SECRET_KEY: str = Field(

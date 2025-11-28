@@ -29,6 +29,7 @@ from app.api.routes.admin import (
 from app.modules.webhook import router as webhook_router_v1
 from app.modules.webhook import router_v2 as webhook_router_v2
 from app.modules.offline_sync import router as offline_sync_router
+from app.modules.odoo_sync import router as odoo_sync_router
 from app.api.routes.moodle.main import router as moodle_router
 from app.api.routes.triggers import router as triggers_router
 from app.api.routes.notifications import router as notifications_router
@@ -171,6 +172,9 @@ app.include_router(webhook_router_v2.router)  # /api/v2/sync/*
 
 # Offline Sync router (NEW)
 app.include_router(offline_sync_router)  # /api/v1/offline-sync/*
+
+# Odoo Sync router (Direct integration with auto-webhook-odoo)
+app.include_router(odoo_sync_router.router)  # /api/v1/odoo-sync/*
 
 # Moodle router (NEW)
 app.include_router(moodle_router, prefix="/api/v1")  # /api/v1/moodle/*
