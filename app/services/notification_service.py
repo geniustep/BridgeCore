@@ -46,7 +46,7 @@ class NotificationService:
             action_data=notification_data.action_data,
             related_model=notification_data.related_model,
             related_id=notification_data.related_id,
-            metadata=notification_data.metadata,
+            extra_data=notification_data.extra_data,
             expires_at=notification_data.expires_at,
             source="api"
         )

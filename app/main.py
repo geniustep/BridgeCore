@@ -174,7 +174,7 @@ app.include_router(webhook_router_v2.router)  # /api/v2/sync/*
 app.include_router(offline_sync_router)  # /api/v1/offline-sync/*
 
 # Odoo Sync router (Direct integration with auto-webhook-odoo)
-app.include_router(odoo_sync_router.router)  # /api/v1/odoo-sync/*
+app.include_router(odoo_sync_router)  # /api/v1/odoo-sync/*
 
 # Moodle router (NEW)
 app.include_router(moodle_router, prefix="/api/v1")  # /api/v1/moodle/*

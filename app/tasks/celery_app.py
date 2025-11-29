@@ -39,7 +39,7 @@ celery_app.conf.update(
 celery_app.conf.beat_schedule = {
     "cleanup-old-audit-logs": {
         "task": "app.tasks.celery_app.cleanup_old_audit_logs",
-        "schedule": crontab(hour=2, minute=0),  # 2 AM daily
+        "schedule": crontab(hour=4, minute=0),  # 4 AM daily
     },
     "refresh-system-connections": {
         "task": "app.tasks.celery_app.refresh_system_connections",
@@ -66,7 +66,12 @@ def run_async(coro):
     Returns:
         Result of coroutine
     """
-    loop = asyncio.get_event_loop()
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        # No event loop exists, create a new one
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
     return loop.run_until_complete(coro)
 
 
@@ -299,14 +304,15 @@ def sync_data(
 
         # Bidirectional sync
         if bidirectional:
-            reverse_results = run_async(sync_data(
+            # Direct call (not async) - sync_data is a regular function, not a coroutine
+            reverse_results = sync_data(
                 user_id=user_id,
                 source_system_id=target_system_id,
                 target_system_id=source_system_id,
                 model=model,
                 filters=filters,
                 bidirectional=False
-            ))
+            )
             results["reverse"] = reverse_results
 
         return results
@@ -417,7 +423,7 @@ def cleanup_old_audit_logs(days: int = 90):
 
         deleted = db.query(AuditLog).filter(
             AuditLog.timestamp < cutoff_date
-        ).delete()
+        ).delete(synchronize_session=False)
 
         db.commit()
 
@@ -507,6 +513,31 @@ def _generate_csv_report(model: str, data: list) -> str:
 # Odoo Sync Tasks
 # ============================================================
 
+from contextlib import contextmanager
+
+
+@contextmanager
+def redis_lock(name: str, ttl: int = 60):
+    """
+    Redis-based distributed lock context manager
+    
+    Args:
+        name: Lock name/key
+        ttl: Time-to-live in seconds (default: 60)
+        
+    Yields:
+        bool: True if lock acquired, False otherwise
+    """
+    import redis
+    r = redis.from_url(settings.REDIS_URL)
+    acquired = r.set(name, "1", nx=True, ex=ttl)
+    try:
+        yield acquired
+    finally:
+        if acquired:
+            r.delete(name)
+
+
 @celery_app.task(name="app.tasks.celery_app.sync_odoo_webhook_events")
 def sync_odoo_webhook_events():
     """
@@ -528,74 +559,80 @@ def sync_odoo_webhook_events():
         logger.warning("ODOO_WEBHOOK_API_KEY not configured, skipping sync")
         return {"skipped": True, "reason": "No API key configured"}
     
-    try:
-        # Get last synced event ID from cache/database
-        last_event_id = _get_last_synced_event_id()
+    # Use Redis lock to prevent concurrent execution
+    with redis_lock("odoo_sync:lock", ttl=60) as lock_acquired:
+        if not lock_acquired:
+            logger.info("Another sync is running, skipping this run")
+            return {"skipped": True, "reason": "Lock not acquired - another sync in progress"}
         
-        # Pull events from Odoo
-        odoo_url = settings.ODOO_URL.rstrip('/')
-        headers = {
-            "Content-Type": "application/json",
-            "X-API-Key": settings.ODOO_WEBHOOK_API_KEY
-        }
-        
-        with httpx.Client(timeout=30) as client:
-            response = client.post(
-                f"{odoo_url}/api/webhooks/pull",
-                headers=headers,
-                json={
-                    "last_event_id": last_event_id,
-                    "limit": settings.ODOO_SYNC_BATCH_SIZE
-                }
-            )
-            response.raise_for_status()
-            result = response.json()
-        
-        events = result.get("events", [])
-        new_last_id = result.get("last_id", last_event_id)
-        has_more = result.get("has_more", False)
-        
-        if not events:
-            logger.debug("No new events from Odoo")
-            return {"success": True, "events_pulled": 0}
-        
-        logger.info(f"Pulled {len(events)} events from Odoo (last_id: {new_last_id})")
-        
-        # Store events locally
-        _store_events_locally(events)
-        
-        # Mark events as processed in Odoo
-        event_ids = [e["id"] for e in events]
-        with httpx.Client(timeout=30) as client:
-            ack_response = client.post(
-                f"{odoo_url}/api/webhooks/mark-processed",
-                headers=headers,
-                json={"event_ids": event_ids}
-            )
-            ack_response.raise_for_status()
-        
-        # Update last synced event ID
-        _set_last_synced_event_id(new_last_id)
-        
-        logger.info(f"Synced {len(events)} events from Odoo, acknowledged")
-        
-        # If there are more events, trigger another sync
-        if has_more:
-            sync_odoo_webhook_events.delay()
-        
-        return {
-            "success": True,
-            "events_pulled": len(events),
-            "last_id": new_last_id,
-            "has_more": has_more
-        }
-        
-    except httpx.HTTPError as e:
-        logger.error(f"HTTP error syncing from Odoo: {e}")
-        return {"success": False, "error": str(e)}
-    except Exception as e:
-        logger.exception(f"Error syncing from Odoo: {e}")
-        return {"success": False, "error": str(e)}
+        try:
+            # Get last synced event ID from cache/database
+            last_event_id = _get_last_synced_event_id()
+            
+            # Pull events from Odoo
+            odoo_url = settings.ODOO_URL.rstrip('/')
+            headers = {
+                "Content-Type": "application/json",
+                "X-API-Key": settings.ODOO_WEBHOOK_API_KEY
+            }
+            
+            with httpx.Client(timeout=30) as client:
+                response = client.post(
+                    f"{odoo_url}/api/webhooks/pull",
+                    headers=headers,
+                    json={
+                        "last_event_id": last_event_id,
+                        "limit": settings.ODOO_SYNC_BATCH_SIZE
+                    }
+                )
+                response.raise_for_status()
+                result = response.json()
+            
+            events = result.get("events", [])
+            new_last_id = result.get("last_id", last_event_id)
+            has_more = result.get("has_more", False)
+            
+            if not events:
+                logger.debug("No new events from Odoo")
+                return {"success": True, "events_pulled": 0}
+            
+            logger.info(f"Pulled {len(events)} events from Odoo (last_id: {new_last_id})")
+            
+            # Store events locally
+            _store_events_locally(events)
+            
+            # Mark events as processed in Odoo
+            event_ids = [e["id"] for e in events]
+            with httpx.Client(timeout=30) as client:
+                ack_response = client.post(
+                    f"{odoo_url}/api/webhooks/mark-processed",
+                    headers=headers,
+                    json={"event_ids": event_ids}
+                )
+                ack_response.raise_for_status()
+            
+            # Update last synced event ID
+            _set_last_synced_event_id(new_last_id)
+            
+            logger.info(f"Synced {len(events)} events from Odoo, acknowledged")
+            
+            # If there are more events, trigger another sync
+            if has_more:
+                sync_odoo_webhook_events.delay()
+            
+            return {
+                "success": True,
+                "events_pulled": len(events),
+                "last_id": new_last_id,
+                "has_more": has_more
+            }
+            
+        except httpx.HTTPError as e:
+            logger.error(f"HTTP error syncing from Odoo: {e}")
+            return {"success": False, "error": str(e)}
+        except Exception as e:
+            logger.exception(f"Error syncing from Odoo: {e}")
+            return {"success": False, "error": str(e)}
 
 
 def _get_last_synced_event_id() -> int:

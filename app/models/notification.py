@@ -87,8 +87,8 @@ class Notification(Base, TimestampMixin):
     related_model = Column(String(255), nullable=True)  # e.g., "sale.order"
     related_id = Column(Integer, nullable=True)  # Odoo record ID
     
-    # Metadata
-    metadata = Column(JSON, nullable=True)
+    # Extra Data (metadata renamed to avoid SQLAlchemy reserved name conflict)
+    extra_data = Column(JSON, nullable=True)
     
     # Expiration
     expires_at = Column(DateTime, nullable=True)

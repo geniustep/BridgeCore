@@ -30,8 +30,8 @@ from app.modules.odoo_sync.schemas import (
     Priority
 )
 from app.core.config import settings
-from app.core.dependencies import get_current_user
-from app.services.cache_service import CacheService, get_cache_service
+from app.core.dependencies import get_current_user, get_cache_service
+from app.services.cache_service import CacheService
 from app.core.rate_limiter import limiter
 from starlette.requests import Request
 

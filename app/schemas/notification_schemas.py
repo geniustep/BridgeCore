@@ -46,7 +46,7 @@ class NotificationCreate(BaseModel):
     action_data: Optional[Dict[str, Any]] = None
     related_model: Optional[str] = None
     related_id: Optional[int] = None
-    metadata: Optional[Dict[str, Any]] = None
+    extra_data: Optional[Dict[str, Any]] = None  # Renamed from metadata to avoid SQLAlchemy conflict
     expires_at: Optional[datetime] = None
 
     class Config:
@@ -152,7 +152,7 @@ class NotificationResponse(BaseModel):
     action_data: Optional[Dict[str, Any]]
     related_model: Optional[str]
     related_id: Optional[int]
-    metadata: Optional[Dict[str, Any]]
+    extra_data: Optional[Dict[str, Any]]  # Renamed from metadata to avoid SQLAlchemy conflict
     expires_at: Optional[datetime]
     source: Optional[str]
     created_at: datetime
