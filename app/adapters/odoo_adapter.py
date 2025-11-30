@@ -3,6 +3,7 @@ Odoo Adapter Implementation
 """
 import httpx
 import json
+import time
 from typing import Dict, Any, List, Optional
 from loguru import logger
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -201,6 +202,8 @@ class OdooAdapter(BaseAdapter):
         if order:
             params["sort"] = order
 
+        start_time = time.time()
+        
         try:
             # Use call_kw endpoint for Odoo 18+
             call_params = {
@@ -217,6 +220,16 @@ class OdooAdapter(BaseAdapter):
                 }
             }
             
+            logger.info(
+                f"🔍 [SEARCHREAD] Starting search_read operation\n"
+                f"   Model: {model}\n"
+                f"   Domain: {domain or []}\n"
+                f"   Fields: {fields or []}\n"
+                f"   Limit: {limit or 80}\n"
+                f"   Offset: {offset or 0}\n"
+                f"   Order: {order or None}"
+            )
+            
             result = await self._call_odoo(
                 "/web/dataset/call_kw",
                 call_params
@@ -229,10 +242,25 @@ class OdooAdapter(BaseAdapter):
             if fields:
                 records = self._apply_field_fallback(records, fields)
 
+            duration = (time.time() - start_time) * 1000  # milliseconds
+            logger.info(
+                f"✅ [SEARCHREAD] Completed successfully\n"
+                f"   Model: {model}\n"
+                f"   Records found: {len(records)}\n"
+                f"   Duration: {duration:.2f}ms"
+            )
+
             return records
 
         except Exception as e:
-            logger.error(f"Odoo search_read error: {str(e)}")
+            duration = (time.time() - start_time) * 1000
+            logger.error(
+                f"❌ [SEARCHREAD] Error: {str(e)}\n"
+                f"   Model: {model}\n"
+                f"   Domain: {domain or []}\n"
+                f"   Duration: {duration:.2f}ms",
+                exc_info=True
+            )
             raise
 
     async def create(
@@ -443,6 +471,13 @@ class OdooAdapter(BaseAdapter):
         Raises:
             Exception: If session expired (code 100) or other errors
         """
+        start_time = time.time()
+        
+        # Extract method info for logging
+        method_name = params.get("method", "unknown")
+        model_name = params.get("model", "unknown")
+        is_call_kw = endpoint == "/web/dataset/call_kw" and method_name != "search_read"
+        
         payload = {
             "jsonrpc": "2.0",
             "method": "call",
@@ -450,6 +485,16 @@ class OdooAdapter(BaseAdapter):
         }
 
         try:
+            # Log call_kw operations (but not search_read, as it's already logged)
+            if is_call_kw:
+                logger.info(
+                    f"🔧 [CALL_KW] Starting call_kw operation\n"
+                    f"   Model: {model_name}\n"
+                    f"   Method: {method_name}\n"
+                    f"   Args: {params.get('args', [])}\n"
+                    f"   Kwargs keys: {list(params.get('kwargs', {}).keys())}"
+                )
+            
             # Add id to payload if not present (required by Odoo JSON-RPC)
             if "id" not in payload:
                 payload["id"] = 1
@@ -459,11 +504,22 @@ class OdooAdapter(BaseAdapter):
                 json=payload
             )
 
+            duration = (time.time() - start_time) * 1000
+
             # Check if response is JSON
             content_type = response.headers.get("content-type", "")
             if "application/json" not in content_type:
                 response_text = response.text[:500]  # First 500 chars
-                logger.error(f"Odoo returned non-JSON response. URL: {self.url}{endpoint}, Content-Type: {content_type}, Status: {response.status_code}, Response: {response_text}")
+                logger.error(
+                    f"❌ [CALL_KW] Odoo returned non-JSON response\n"
+                    f"   Endpoint: {endpoint}\n"
+                    f"   Model: {model_name}\n"
+                    f"   Method: {method_name}\n"
+                    f"   Content-Type: {content_type}\n"
+                    f"   Status: {response.status_code}\n"
+                    f"   Response: {response_text}\n"
+                    f"   Duration: {duration:.2f}ms"
+                )
                 # Try to get more info about the request
                 logger.error(f"Request cookies: {dict(self.client.cookies)}")
                 raise Exception(f"Odoo returned non-JSON response: {content_type}. Status: {response.status_code}")
@@ -474,17 +530,47 @@ class OdooAdapter(BaseAdapter):
             if "error" in result:
                 error = result["error"]
                 if error.get("code") == 100:
-                    logger.warning("Odoo session expired, refreshing...")
+                    logger.warning(
+                        f"⚠️ [CALL_KW] Odoo session expired, refreshing...\n"
+                        f"   Model: {model_name}\n"
+                        f"   Method: {method_name}"
+                    )
                     await self.refresh_session()
                     # Retry request
                     return await self._call_odoo(endpoint, params)
 
+                logger.error(
+                    f"❌ [CALL_KW] Odoo error: {error.get('message', 'Unknown error')}\n"
+                    f"   Model: {model_name}\n"
+                    f"   Method: {method_name}\n"
+                    f"   Error code: {error.get('code')}\n"
+                    f"   Duration: {duration:.2f}ms"
+                )
                 raise Exception(f"Odoo error: {error.get('message', 'Unknown error')}")
+
+            # Log successful call_kw (but not search_read)
+            if is_call_kw:
+                result_preview = str(result.get("result", ""))[:200] if result.get("result") else "None"
+                logger.info(
+                    f"✅ [CALL_KW] Completed successfully\n"
+                    f"   Model: {model_name}\n"
+                    f"   Method: {method_name}\n"
+                    f"   Result preview: {result_preview}\n"
+                    f"   Duration: {duration:.2f}ms"
+                )
 
             return result.get("result")
 
         except Exception as e:
-            logger.error(f"Odoo API call error: {str(e)}")
+            duration = (time.time() - start_time) * 1000
+            logger.error(
+                f"❌ [CALL_KW] API call error: {str(e)}\n"
+                f"   Endpoint: {endpoint}\n"
+                f"   Model: {model_name}\n"
+                f"   Method: {method_name}\n"
+                f"   Duration: {duration:.2f}ms",
+                exc_info=True
+            )
             raise
 
     def _apply_field_fallback(

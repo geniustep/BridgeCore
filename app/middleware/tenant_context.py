@@ -54,11 +54,36 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         token = auth_header.split(" ")[1]
+        
+        # Log the request path for debugging
+        logger.info(f"[TenantContext] Processing request: {request.url.path}")
+        
         payload = decode_tenant_token(token)
 
         if not payload:
             # Not a tenant token (might be admin token)
+            # Try to decode without validation to see what's in the token
+            try:
+                from jose import jwt
+                from app.core.config import settings
+                unverified_payload = jwt.decode(
+                    token, 
+                    settings.JWT_SECRET_KEY, 
+                    algorithms=[settings.JWT_ALGORITHM],
+                    options={"verify_exp": False}
+                )
+                logger.warning(
+                    f"[TenantContext] Token is not a tenant token. "
+                    f"user_type={unverified_payload.get('user_type')}, "
+                    f"has_tenant_id={unverified_payload.get('tenant_id') is not None}, "
+                    f"sub={unverified_payload.get('sub')}"
+                )
+            except Exception as e:
+                logger.warning(f"[TenantContext] Could not decode token for debugging: {str(e)}")
+            
             return await call_next(request)
+        
+        logger.info(f"[TenantContext] Tenant token decoded successfully: user_id={payload.get('sub')}, tenant_id={payload.get('tenant_id')}")
 
         tenant_id = payload.get("tenant_id")
         user_id = payload.get("sub")
@@ -101,6 +126,8 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
                 request.state.tenant_id = tenant_id
                 request.state.user_id = user_id
                 request.state.tenant = tenant
+                
+                logger.debug(f"[TenantContext] Tenant context set: tenant_id={tenant_id}, odoo_url={tenant.odoo_url}")
 
         except HTTPException:
             raise

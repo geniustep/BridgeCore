@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 from jose import JWTError, jwt
 from passlib.context import CryptContext
+from loguru import logger
 from app.core.config import settings
 
 # Password hashing context
@@ -351,10 +352,12 @@ def decode_tenant_token(token: str) -> Optional[Dict[str, Any]]:
 
         # Verify it's a tenant token
         if payload.get("user_type") != "tenant":
+            logger.debug(f"[decode_tenant_token] Token is not a tenant token. user_type={payload.get('user_type')}, has_tenant_id={payload.get('tenant_id') is not None}")
             return None
 
         return payload
-    except JWTError:
+    except JWTError as e:
+        logger.debug(f"[decode_tenant_token] JWT decode error: {str(e)}")
         return None
 
 

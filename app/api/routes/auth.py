@@ -43,6 +43,7 @@ from loguru import logger
 
 router = APIRouter(prefix="/api/v1/auth", tags=["Authentication"])
 security = HTTPBearer()
+security_optional = HTTPBearer(auto_error=False)  # For optional auth endpoints like logout
 
 
 # ============================================================================
@@ -682,30 +683,34 @@ async def get_tenant_user_info(
 
 @router.post("/tenant/logout")
 async def tenant_logout(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_optional)
 ):
     """
     Logout tenant user
 
     Note: With JWT, logout is primarily handled client-side.
     This endpoint is for logging purposes.
+    
+    Returns success even if no active session exists (idempotent).
 
     Args:
-        credentials: Bearer access token
+        credentials: Optional Bearer access token
 
     Returns:
-        Success message
+        Success message (always returns 200)
     """
-    access_token = credentials.credentials
+    if credentials and credentials.credentials:
+        access_token = credentials.credentials
+        # Decode token to get user info for logging
+        payload = decode_tenant_token(access_token)
+        if payload:
+            email = payload.get("email")
+            logger.info(f"Tenant user logged out: {email}")
 
-    # Decode token to get user info for logging
-    payload = decode_tenant_token(access_token)
-    if payload:
-        email = payload.get("email")
-        logger.info(f"Tenant user logged out: {email}")
-
-    # TODO: Add token to blacklist in Redis if needed
-    # await redis.sadd("token_blacklist", access_token)
+        # TODO: Add token to blacklist in Redis if needed
+        # await redis.sadd("token_blacklist", access_token)
+    else:
+        logger.info("Logout called without active session - returning success")
 
     return {"message": "Logged out successfully"}
 

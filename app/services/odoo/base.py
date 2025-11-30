@@ -7,6 +7,7 @@ It handles authentication, JSON-RPC communication, context management, and error
 from abc import ABC
 from typing import Any, Dict, List, Optional, Union
 import httpx
+import json
 from loguru import logger
 
 from app.core.config import settings
@@ -319,13 +320,49 @@ class OdooOperationsService(ABC):
                     data={"response_text": response.text[:500]}
                 )
 
-            result = response.json()
+            # Try to parse JSON with better error handling
+            try:
+                result = response.json()
+            except json.JSONDecodeError as json_err:
+                response_text = response.text[:1000]  # First 1000 chars
+                response_text_safe = response_text.replace('{', '{{').replace('}', '}}')
+                error_msg = str(json_err).replace('{', '{{').replace('}', '}}')
+                logger.error(
+                    "❌ [JSON PARSE ERROR] Failed to parse JSON response\n"
+                    "   Model: {}\n"
+                    "   Method: {}\n"
+                    "   Status Code: {}\n"
+                    "   Content-Type: {}\n"
+                    "   Response Text (first 1000 chars): {}\n"
+                    "   JSON Error: {}".format(
+                        str(model),
+                        str(method),
+                        response.status_code,
+                        content_type,
+                        response_text_safe,
+                        error_msg
+                    ),
+                    exc_info=True
+                )
+                raise OdooExecutionError(
+                    message=f"Invalid JSON response from Odoo: {str(json_err)}",
+                    data={
+                        "response_text": response_text,
+                        "status_code": response.status_code,
+                        "content_type": content_type
+                    }
+                )
 
             if "error" in result:
                 error_data = result["error"]
                 error_code = error_data.get("code")
                 error_msg = error_data.get("message", "Unknown error")
                 error_details = error_data.get("data", {})
+                
+                # Get more specific error message from error_details if available
+                specific_error_msg = error_details.get("message") if error_details else None
+                if specific_error_msg:
+                    error_msg = specific_error_msg
 
                 # Handle session expiration (code 100)
                 if error_code == 100 and retry_on_session_expire:
@@ -347,6 +384,14 @@ class OdooOperationsService(ABC):
                         model=model
                     )
 
+                # Handle method not found errors (check BEFORE model not found)
+                if "method" in error_msg_lower and "does not exist" in error_msg_lower:
+                    raise OdooExecutionError(
+                        message=error_msg,
+                        data={"model": model, "method": method, "error_type": "method_not_found"}
+                    )
+
+                # Handle model not found errors (only if not a method error)
                 if "does not exist" in error_msg_lower and "model" in error_msg_lower:
                     raise OdooModelNotFoundException(model)
 
@@ -356,21 +401,34 @@ class OdooOperationsService(ABC):
                         record_id=args[0] if args else 0
                     )
 
+                # Format error details for logging - escape curly braces for .format()
+                error_details_str = json.dumps(error_details, indent=2) if error_details else "None"
+                error_details_str_safe = error_details_str.replace('{', '{{').replace('}', '}}')
+                error_data_str = json.dumps(error_data, indent=2, default=str)
+                error_data_str_safe = error_data_str.replace('{', '{{').replace('}', '}}')
+                error_msg_safe = str(error_msg).replace('{', '{{').replace('}', '}}')
+                
                 logger.error(
-                    f"Odoo error in {model}.{method}: {error_msg}",
-                    extra={
-                        "model": model,
-                        "method": method,
-                        "error_code": error_code,
-                        "error_data": error_details
-                    }
+                    "❌ [ODOO ERROR] {}.{} failed\n"
+                    "   Error Code: {}\n"
+                    "   Error Message: {}\n"
+                    "   Error Details: {}\n"
+                    "   Full Error Response: {}".format(
+                        str(model),
+                        str(method),
+                        error_code,
+                        error_msg_safe,
+                        error_details_str_safe,
+                        error_data_str_safe
+                    ),
+                    exc_info=True
                 )
                 raise OdooExecutionError(
                     message=error_msg,
                     data=error_details
                 )
 
-            logger.debug(f"Successfully executed {model}.{method}")
+            logger.debug(f"✅ Successfully executed {model}.{method}")
             return result.get("result")
 
         except httpx.TimeoutException:
@@ -387,11 +445,58 @@ class OdooOperationsService(ABC):
                 OdooModelNotFoundException, OdooRecordNotFoundException,
                 OdooSessionExpiredException, OdooTimeoutException):
             raise
+        except json.JSONDecodeError as json_err:
+            error_msg = str(json_err).replace('{', '{{').replace('}', '}}')
+            logger.error(
+                "❌ [JSON DECODE ERROR] JSON parsing failed\n"
+                "   Model: {}\n"
+                "   Method: {}\n"
+                "   JSON Error: {}\n"
+                "   Error Position: {}".format(
+                    str(model),
+                    str(method),
+                    error_msg,
+                    json_err.pos if hasattr(json_err, 'pos') else 'unknown'
+                ),
+                exc_info=True
+            )
+            raise OdooExecutionError(
+                message=f"JSON parsing error: {str(json_err)}",
+                data={"model": model, "method": method, "json_error": str(json_err)}
+            )
         except Exception as e:
-            logger.error(f"Unexpected error in {model}.{method}: {str(e)}")
+            # Get response text if available for debugging
+            response_info = {}
+            try:
+                if 'response' in locals():
+                    response_info = {
+                        "status_code": response.status_code,
+                        "content_type": response.headers.get("content-type", ""),
+                        "response_preview": response.text[:500] if hasattr(response, 'text') else "N/A"
+                    }
+            except:
+                pass
+            
+            error_msg = str(e).replace('{', '{{').replace('}', '}}')
+            response_info_safe = str(response_info).replace('{', '{{').replace('}', '}}')
+            logger.error(
+                "❌ [UNEXPECTED ERROR] Unexpected exception occurred\n"
+                "   Model: {}\n"
+                "   Method: {}\n"
+                "   Error Type: {}\n"
+                "   Error Message: {}\n"
+                "   Response Info: {}".format(
+                    str(model),
+                    str(method),
+                    type(e).__name__,
+                    error_msg,
+                    response_info_safe
+                ),
+                exc_info=True
+            )
             raise OdooExecutionError(
                 message=f"Unexpected error: {str(e)}",
-                data={"model": model, "method": method}
+                data={"model": model, "method": method, "error_type": type(e).__name__, **response_info}
             )
 
     async def _execute_with_cache(

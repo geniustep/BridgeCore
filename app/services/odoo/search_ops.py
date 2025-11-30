@@ -7,6 +7,7 @@ This module provides search-related operations for Odoo:
 - search_count: Count matching records
 """
 from typing import Any, Dict, List, Optional, Union
+import time
 from loguru import logger
 
 from .base import OdooOperationsService
@@ -205,28 +206,64 @@ class SearchOperations(OdooOperationsService):
         if context:
             kwargs["context"] = context
 
-        logger.debug(
-            f"search_read on {model}",
-            extra={
-                "model": model,
-                "domain": domain,
-                "fields": fields,
-                "limit": limit,
-                "offset": offset,
-                "order": order
-            }
+        start_time = time.time()
+        
+        logger.info(
+            "🔍 [SEARCHREAD] Starting search_read operation\n"
+            "   Model: {}\n"
+            "   Domain: {}\n"
+            "   Fields: {}\n"
+            "   Limit: {}\n"
+            "   Offset: {}\n"
+            "   Order: {}".format(
+                str(model),
+                domain,
+                fields,
+                limit,
+                offset,
+                order
+            )
         )
 
-        result = await self._execute_kw(
-            model=model,
-            method="search_read",
-            args=[domain or []],
-            kwargs=kwargs
-        )
+        try:
+            result = await self._execute_kw(
+                model=model,
+                method="search_read",
+                args=[domain or []],
+                kwargs=kwargs
+            )
 
-        records = result if isinstance(result, list) else []
+            records = result if isinstance(result, list) else []
+            duration = (time.time() - start_time) * 1000
 
-        logger.debug(f"search_read returned {len(records)} records from {model}")
+            logger.info(
+                "✅ [SEARCHREAD] Completed successfully\n"
+                "   Model: {}\n"
+                "   Records returned: {}\n"
+                "   Duration: {:.2f}ms".format(
+                    str(model),
+                    len(records),
+                    duration
+                )
+            )
+
+            return records
+        except Exception as e:
+            duration = (time.time() - start_time) * 1000
+            error_msg = str(e).replace('{', '{{').replace('}', '}}')
+            logger.error(
+                "❌ [SEARCHREAD] Error: {}\n"
+                "   Model: {}\n"
+                "   Domain: {}\n"
+                "   Duration: {:.2f}ms".format(
+                    error_msg,
+                    str(model),
+                    domain,
+                    duration
+                ),
+                exc_info=True
+            )
+            raise
         return records
 
     async def search_count(

@@ -1,6 +1,7 @@
 """
 Search operation routes for Odoo API
 """
+import time
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from loguru import logger
 
@@ -119,7 +120,26 @@ async def search_read_records(
     }
     ```
     """
+    start_time = time.time()
+    
     try:
+        logger.info(
+            "🔍 [ENDPOINT] /search_read request received\n"
+            "   Model: {}\n"
+            "   Domain: {}\n"
+            "   Fields: {}\n"
+            "   Limit: {}\n"
+            "   Offset: {}\n"
+            "   Order: {}".format(
+                str(body.model),
+                body.domain,
+                body.fields,
+                body.limit,
+                body.offset,
+                body.order
+            )
+        )
+        
         records = await service.search_read(
             model=body.model,
             domain=body.domain,
@@ -128,6 +148,18 @@ async def search_read_records(
             offset=body.offset,
             order=body.order,
             context=body.context
+        )
+
+        duration = (time.time() - start_time) * 1000
+        logger.info(
+            "✅ [ENDPOINT] /search_read completed successfully\n"
+            "   Model: {}\n"
+            "   Records returned: {}\n"
+            "   Duration: {:.2f}ms".format(
+                str(body.model),
+                len(records),
+                duration
+            )
         )
 
         return SearchReadResponse(
@@ -157,7 +189,15 @@ async def search_read_records(
             detail=f"Odoo error: {e.message}"
         )
     except Exception as e:
-        logger.error(f"Search read error: {str(e)}")
+        duration = (time.time() - start_time) * 1000
+        model_name = str(body.model) if body else "unknown"
+        error_msg = str(e).replace('{', '{{').replace('}', '}}')
+        logger.error(
+            "❌ [ENDPOINT] /search_read error: {}\n"
+            "   Model: {}\n"
+            "   Duration: {:.2f}ms".format(error_msg, model_name, duration),
+            exc_info=True
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Internal error: {str(e)}"

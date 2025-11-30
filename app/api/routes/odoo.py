@@ -408,14 +408,38 @@ async def execute_operation_with_tenant(
     try:
         # Execute operations using OdooAdapter
         if operation == "search_read":
+            domain = data.get("domain", [])
+            fields = data.get("fields")
+            limit = data.get("limit", 80)
+            offset = data.get("offset", 0)
+            order = data.get("order")
+            
+            logger.info(
+                f"🔍 [ENDPOINT] search_read request received\n"
+                f"   Tenant: {tenant.name if tenant else 'unknown'}\n"
+                f"   Model: {model}\n"
+                f"   Domain: {domain}\n"
+                f"   Fields: {fields}\n"
+                f"   Limit: {limit}\n"
+                f"   Offset: {offset}\n"
+                f"   Order: {order}"
+            )
+            
             result = await adapter.search_read(
                 model=model,
-                domain=data.get("domain", []),
-                fields=data.get("fields"),
-                limit=data.get("limit", 80),
-                offset=data.get("offset", 0),
-                order=data.get("order")
+                domain=domain,
+                fields=fields,
+                limit=limit,
+                offset=offset,
+                order=order
             )
+            
+            logger.info(
+                f"✅ [ENDPOINT] search_read completed\n"
+                f"   Model: {model}\n"
+                f"   Records returned: {len(result) if isinstance(result, list) else 'N/A'}"
+            )
+            
             return result
 
         elif operation == "read":
@@ -574,12 +598,29 @@ async def execute_operation_with_tenant(
             if not method:
                 raise ValueError("method is required for call_kw operation")
             
+            logger.info(
+                f"🔧 [ENDPOINT] call_kw request received\n"
+                f"   Tenant: {tenant.name if tenant else 'unknown'}\n"
+                f"   Model: {model}\n"
+                f"   Method: {method}\n"
+                f"   Args: {args}\n"
+                f"   Kwargs keys: {list(kwargs.keys()) if kwargs else []}"
+            )
+            
             result = await adapter.call_method(
                 model=model,
                 method=method,
                 args=args,
                 kwargs=kwargs
             )
+            
+            logger.info(
+                f"✅ [ENDPOINT] call_kw completed\n"
+                f"   Model: {model}\n"
+                f"   Method: {method}\n"
+                f"   Result type: {type(result).__name__}"
+            )
+            
             return result
 
         else:

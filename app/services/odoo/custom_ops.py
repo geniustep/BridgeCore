@@ -6,6 +6,7 @@ This module provides custom method calling capabilities:
 - Action helpers: action_confirm, button_cancel, etc.
 """
 from typing import Any, Dict, List, Optional
+import time
 from loguru import logger
 
 from .base import OdooOperationsService
@@ -90,24 +91,65 @@ class CustomOperations(OdooOperationsService):
             else:
                 method_kwargs["context"] = context
 
+        start_time = time.time()
+        
+        # Escape curly braces in args for .format()
+        args_safe = str(args).replace('{', '{{').replace('}', '}}')
         logger.info(
-            f"Calling {model}.{method}",
-            extra={
-                "model": model,
-                "method": method,
-                "args_count": len(args) if args else 0
-            }
+            "🔧 [CALL_KW] Starting call_kw operation\n"
+            "   Model: {}\n"
+            "   Method: {}\n"
+            "   Args: {}\n"
+            "   Kwargs keys: {}".format(
+                str(model),
+                str(method),
+                args_safe,
+                list(method_kwargs.keys()) if method_kwargs else []
+            )
         )
 
-        result = await self._execute_kw(
-            model=model,
-            method=method,
-            args=args or [],
-            kwargs=method_kwargs
-        )
+        try:
+            result = await self._execute_kw(
+                model=model,
+                method=method,
+                args=args or [],
+                kwargs=method_kwargs
+            )
 
-        logger.info(f"Method {model}.{method} completed")
-        return result
+            duration = (time.time() - start_time) * 1000
+            result_preview = str(result)[:200] if result else "None"
+            result_preview_safe = result_preview.replace('{', '{{').replace('}', '}}')
+            
+            logger.info(
+                "✅ [CALL_KW] Completed successfully\n"
+                "   Model: {}\n"
+                "   Method: {}\n"
+                "   Result preview: {}\n"
+                "   Duration: {:.2f}ms".format(
+                    str(model),
+                    str(method),
+                    result_preview_safe,
+                    duration
+                )
+            )
+            
+            return result
+        except Exception as e:
+            duration = (time.time() - start_time) * 1000
+            error_msg = str(e).replace('{', '{{').replace('}', '}}')
+            logger.error(
+                "❌ [CALL_KW] Error: {}\n"
+                "   Model: {}\n"
+                "   Method: {}\n"
+                "   Duration: {:.2f}ms".format(
+                    error_msg,
+                    str(model),
+                    str(method),
+                    duration
+                ),
+                exc_info=True
+            )
+            raise
 
     # ==================== Sale Order Actions ====================
 

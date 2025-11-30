@@ -101,3 +101,36 @@ class MessagePostResponse(BaseModel):
                 "message_id": 123
             }
         }
+
+
+class CallKwRequest(BaseModel):
+    """Request schema for call_kw operation (Odoo's execute_kw)"""
+    model: str = Field(..., description="Model name", min_length=1)
+    method: str = Field(..., description="Method name to call", min_length=1)
+    args: Optional[List[Any]] = Field(default=[], description="Positional arguments")
+    kwargs: Optional[Dict[str, Any]] = Field(default={}, description="Keyword arguments")
+    context: Optional[Dict[str, Any]] = Field(default=None, description="Additional context")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "model": "shuttlebee.trip",
+                "method": "get_manager_analytics",
+                "args": [],
+                "kwargs": {}
+            }
+        }
+
+
+class CallKwResponse(BaseModel):
+    """Response schema for call_kw operation"""
+    success: bool = True
+    result: Any = Field(default=None, description="Method result")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "success": True,
+                "result": {"total_trips": 150, "active_drivers": 25}
+            }
+        }

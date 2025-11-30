@@ -54,6 +54,10 @@ async def get_odoo_credentials(
     """
     Extract Odoo credentials from request headers or tenant context
 
+    Priority:
+    1. Tenant context from JWT token (set by TenantContextMiddleware)
+    2. Headers (X-Odoo-Url, X-Odoo-DB, X-Odoo-User, X-Odoo-Password)
+
     Headers:
         X-Odoo-Url: Odoo instance URL
         X-Odoo-DB: Database name
@@ -64,6 +68,16 @@ async def get_odoo_credentials(
     """
     # Check if we have tenant context from middleware
     tenant = getattr(request.state, 'tenant', None)
+    
+    # Enhanced debug logging
+    logger.info(f"[ODOO_DEPS] Checking tenant context: tenant={tenant is not None}")
+    logger.info(f"[ODOO_DEPS] Request path: {request.url.path}")
+    logger.info(f"[ODOO_DEPS] Authorization header present: {request.headers.get('authorization') is not None}")
+    
+    if hasattr(request.state, 'tenant_id'):
+        logger.info(f"[ODOO_DEPS] tenant_id in state: {request.state.tenant_id}")
+    else:
+        logger.warning(f"[ODOO_DEPS] No tenant_id in request.state - middleware may not have run")
 
     if tenant:
         # Decrypt Odoo password
@@ -82,10 +96,17 @@ async def get_odoo_credentials(
         }
 
     # Fall back to headers
+    logger.debug(f"[ODOO_DEPS] No tenant context, checking headers")
     if not all([x_odoo_url, x_odoo_db, x_odoo_user, x_odoo_password]):
+        logger.warning(
+            f"[ODOO_DEPS] Missing Odoo credentials. "
+            f"Tenant context: {tenant is not None}, "
+            f"Headers provided: url={x_odoo_url is not None}, db={x_odoo_db is not None}, "
+            f"user={x_odoo_user is not None}, password={x_odoo_password is not None}"
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Missing Odoo credentials. Provide headers: X-Odoo-Url, X-Odoo-DB, X-Odoo-User, X-Odoo-Password"
+            detail="Missing Odoo credentials. Either use a tenant JWT token or provide headers: X-Odoo-Url, X-Odoo-DB, X-Odoo-User, X-Odoo-Password"
         )
 
     return {
