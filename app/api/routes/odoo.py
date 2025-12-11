@@ -186,6 +186,10 @@ async def execute_odoo_operation(
                 system_id=system_id,
                 operation=operation,
                 model=model,
+                # IMPORTANT: cache must be user-scoped when requests depend on tenant user identity
+                # (e.g. driver pages / per-user domains). Without this, results can leak between users
+                # under the same tenant when the domain/context is not fully user-specific.
+                user_id=str(user_id) if user_id is not None else None,
                 domain=str(request_data.get('domain', [])),
                 fields=str(request_data.get('fields', [])),
                 limit=request_data.get('limit'),
@@ -324,6 +328,9 @@ async def execute_odoo_operation(
 
         return response
 
+    except HTTPException:
+        # Preserve explicit HTTP errors (400/401/403/404/429/etc.)
+        raise
     except ValueError as e:
         logger.error(f"Validation error in {operation}: {str(e)}")
         duration = time.time() - start_time
@@ -626,8 +633,28 @@ async def execute_operation_with_tenant(
         else:
             raise ValueError(f"Operation {operation} not implemented")
     
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"[ODOO OPERATION] Error executing {operation}: {str(e)}")
+
+        # Normalize common OdooAdapter errors into proper HTTP responses.
+        # OdooAdapter raises generic Exception("Odoo error: ...") today.
+        msg = str(e) or "Unknown error"
+        if msg.startswith("Odoo error:"):
+            detail = msg.split("Odoo error:", 1)[1].strip() or "Odoo error"
+            detail_lower = detail.lower()
+
+            status_code = status.HTTP_400_BAD_REQUEST
+            if "access denied" in detail_lower or "permission" in detail_lower:
+                status_code = status.HTTP_403_FORBIDDEN
+            elif "does not exist" in detail_lower and ("model" in detail_lower or "object" in detail_lower):
+                status_code = status.HTTP_404_NOT_FOUND
+            elif "session" in detail_lower and "expired" in detail_lower:
+                status_code = status.HTTP_401_UNAUTHORIZED
+
+            raise HTTPException(status_code=status_code, detail=detail)
+
         raise
     
     finally:

@@ -1,11 +1,13 @@
 """
 Tenant context middleware to extract and validate tenant information
 """
-from fastapi import Request, Response, HTTPException, status
+from fastapi import Request, Response, status
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse
 from starlette.types import ASGIApp
 from typing import Callable
 from uuid import UUID
+import time
 
 from app.core.security import decode_tenant_token
 from app.db.session import AsyncSessionLocal
@@ -26,6 +28,10 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
 
     def __init__(self, app: ASGIApp):
         super().__init__(app)
+        # Tiny in-process cache to reduce DB hits under high request volume.
+        # Key: tenant_id (str) -> (expires_at_epoch_seconds, tenant_obj)
+        self._tenant_cache: dict[str, tuple[float, object]] = {}
+        self._tenant_cache_ttl_seconds: int = 30
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         # Skip tenant validation for OPTIONS requests (CORS preflight)
@@ -89,34 +95,48 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
         user_id = payload.get("sub")
 
         if not tenant_id:
-            raise HTTPException(
+            # IMPORTANT: Do not raise from BaseHTTPMiddleware; return a response.
+            return JSONResponse(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid tenant token"
+                content={"detail": "Invalid tenant token (missing tenant_id)"},
             )
 
         # Validate tenant
         try:
+            # Fast path: in-memory cache
+            now = time.time()
+            cached = self._tenant_cache.get(tenant_id)
+            if cached:
+                expires_at, cached_tenant = cached
+                if expires_at > now:
+                    request.state.tenant_id = tenant_id
+                    request.state.user_id = user_id
+                    request.state.tenant = cached_tenant
+                    return await call_next(request)
+                else:
+                    self._tenant_cache.pop(tenant_id, None)
+
             async with AsyncSessionLocal() as session:
                 tenant_repo = TenantRepository(session)
                 tenant = await tenant_repo.get_by_id_uuid(UUID(tenant_id))
 
                 if not tenant:
-                    raise HTTPException(
+                    return JSONResponse(
                         status_code=status.HTTP_404_NOT_FOUND,
-                        detail="Tenant not found"
+                        content={"detail": "Tenant not found"},
                     )
 
                 # Check tenant status
                 if tenant.status == TenantStatus.SUSPENDED:
-                    raise HTTPException(
+                    return JSONResponse(
                         status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Tenant account is suspended. Please contact support."
+                        content={"detail": "Tenant account is suspended. Please contact support."},
                     )
 
                 if tenant.status == TenantStatus.DELETED:
-                    raise HTTPException(
+                    return JSONResponse(
                         status_code=status.HTTP_410_GONE,
-                        detail="Tenant account has been deleted"
+                        content={"detail": "Tenant account has been deleted"},
                     )
 
                 # Update last active timestamp
@@ -126,16 +146,20 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
                 request.state.tenant_id = tenant_id
                 request.state.user_id = user_id
                 request.state.tenant = tenant
+
+                # Cache tenant briefly to reduce DB hits under load
+                self._tenant_cache[tenant_id] = (now + self._tenant_cache_ttl_seconds, tenant)
                 
                 logger.debug(f"[TenantContext] Tenant context set: tenant_id={tenant_id}, odoo_url={tenant.odoo_url}")
 
-        except HTTPException:
-            raise
         except Exception as e:
             logger.error(f"Error in tenant context middleware: {str(e)}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to validate tenant context"
+            # Under load, DB connectivity/pool issues can happen.
+            # Return a proper JSON response instead of raising inside BaseHTTPMiddleware,
+            # which can otherwise surface as plain-text 500.
+            return JSONResponse(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                content={"detail": "Failed to validate tenant context. Please retry."},
             )
 
         # Continue processing request
