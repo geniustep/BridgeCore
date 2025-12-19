@@ -70,6 +70,9 @@ class OfflineSyncService:
             "product.category",
             "account.move",
             "account.payment",
+            # Conversations
+            "mail.message",
+            "mail.channel",
         ],
         "delivery_app": [
             "stock.picking",
@@ -78,6 +81,9 @@ class OfflineSyncService:
             "stock.location",
             "res.partner",
             "product.product",
+            # Conversations
+            "mail.message",
+            "mail.channel",
         ],
         "warehouse_app": [
             "stock.picking",
@@ -87,6 +93,9 @@ class OfflineSyncService:
             "product.product",
             "stock.location",
             "stock.warehouse",
+            # Conversations
+            "mail.message",
+            "mail.channel",
         ],
         "manager_app": [
             "sale.order",
@@ -96,6 +105,9 @@ class OfflineSyncService:
             "project.project",
             "project.task",
             "res.partner",
+            # Conversations
+            "mail.message",
+            "mail.channel",
         ],
         "crm_app": [
             "crm.lead",
@@ -103,6 +115,16 @@ class OfflineSyncService:
             "res.partner",
             "calendar.event",
             "mail.activity",
+            # Conversations
+            "mail.message",
+            "mail.channel",
+        ],
+        # New app type for messaging
+        "messaging_app": [
+            "mail.message",
+            "mail.channel",
+            "res.partner",
+            "res.users",
         ],
     }
 

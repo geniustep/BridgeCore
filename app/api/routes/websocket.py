@@ -6,13 +6,15 @@ Provides real-time notifications for:
 - Long-running operation progress
 - Audit log events
 - Cache invalidation
+- Conversations (messages, channels, chatter)
 """
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from typing import Dict, Set, List
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query, HTTPException, status
+from typing import Dict, Set, List, Optional
 from loguru import logger
 import json
 import asyncio
 from datetime import datetime
+from app.core.security import decode_tenant_token
 
 
 router = APIRouter()
@@ -33,9 +35,16 @@ class ConnectionManager:
     def __init__(self):
         # user_id -> Set of WebSocket connections
         self.active_connections: Dict[int, Set[WebSocket]] = {}
+        
+        # Connection mapping: connection_id -> {websocket, partner_id, subscriptions}
+        self.connection_details: Dict[int, Dict] = {}
 
         # channel -> Set of user_ids subscribed
         self.channel_subscriptions: Dict[str, Set[int]] = {}
+        
+        # Conversation routing subscriptions: routing_key -> Set of connection_ids
+        # routing_key format: "channel:{channel_id}", "thread:{model}:{res_id}", "inbox:{partner_id}"
+        self.conversation_subscriptions: Dict[str, Set[int]] = {}
 
         # Odoo model subscriptions: "system:model:id" -> Set of user_ids
         self.model_subscriptions: Dict[str, Set[int]] = {}
@@ -117,6 +126,104 @@ class ConnectionManager:
 
         self.channel_subscriptions[channel].add(user_id)
         logger.info(f"User {user_id} subscribed to channel {channel}")
+    
+    async def subscribe_to_conversation_channel(
+        self,
+        websocket: WebSocket,
+        user_id: int,
+        partner_id: int,
+        channel_id: int
+    ):
+        """
+        Subscribe to a conversation channel for real-time messages
+        
+        ⚠️ تصحيح: نستخدم connection-based subscriptions + routing keys
+        
+        Args:
+            websocket: WebSocket connection
+            user_id: User ID
+            partner_id: Partner ID
+            channel_id: Channel ID
+        """
+        connection_id = id(websocket)
+        routing_key = f"channel:{channel_id}"
+        
+        if routing_key not in self.conversation_subscriptions:
+            self.conversation_subscriptions[routing_key] = set()
+        
+        self.conversation_subscriptions[routing_key].add(connection_id)
+        
+        # Store connection details
+        self.connection_details[connection_id] = {
+            "websocket": websocket,
+            "user_id": user_id,
+            "partner_id": partner_id,
+            "subscriptions": set([routing_key])
+        }
+        
+        logger.info(f"Connection {connection_id} (user {user_id}, partner {partner_id}) subscribed to channel {channel_id}")
+    
+    async def unsubscribe_from_conversation_channel(
+        self,
+        websocket: WebSocket,
+        channel_id: int
+    ):
+        """
+        Unsubscribe from a conversation channel
+        
+        Args:
+            websocket: WebSocket connection
+            channel_id: Channel ID
+        """
+        connection_id = id(websocket)
+        routing_key = f"channel:{channel_id}"
+        
+        if routing_key in self.conversation_subscriptions:
+            self.conversation_subscriptions[routing_key].discard(connection_id)
+        
+        if connection_id in self.connection_details:
+            self.connection_details[connection_id]["subscriptions"].discard(routing_key)
+    
+    async def broadcast_to_routing(
+        self,
+        routing_key: str,
+        message: dict
+    ):
+        """
+        Broadcast message to subscribers of a routing key
+        
+        Routing keys:
+        - channel:{channel_id} - Channel messages
+        - thread:{model}:{res_id} - Chatter messages
+        - inbox:{partner_id} - Personal inbox
+        
+        Args:
+            routing_key: Routing key (e.g., "channel:123")
+            message: Message dictionary to broadcast
+        """
+        if routing_key not in self.conversation_subscriptions:
+            return
+        
+        connection_ids = self.conversation_subscriptions[routing_key].copy()
+        dead_connections = set()
+        
+        for conn_id in connection_ids:
+            if conn_id in self.connection_details:
+                websocket = self.connection_details[conn_id]["websocket"]
+                try:
+                    await websocket.send_json(message)
+                except Exception as e:
+                    logger.error(f"Failed to send to connection {conn_id}: {e}")
+                    dead_connections.add(conn_id)
+            else:
+                dead_connections.add(conn_id)
+        
+        # Clean up dead connections
+        for conn_id in dead_connections:
+            if routing_key in self.conversation_subscriptions:
+                self.conversation_subscriptions[routing_key].discard(conn_id)
+            if conn_id in self.connection_details:
+                del self.connection_details[conn_id]
 
     async def unsubscribe_from_channel(self, channel: str, user_id: int):
         """
@@ -259,34 +366,91 @@ async def websocket_endpoint(websocket: WebSocket, user_id: int):
         websocket: WebSocket instance
         user_id: User ID
 
-    Message Format:
-        {
-            "type": "subscribe|unsubscribe|ping|message",
-            "channel": "system_status|operations|audit",
-            "data": {...}
-        }
+    Message Types:
+        - subscribe: Subscribe to a channel
+        - unsubscribe: Unsubscribe from a channel
+        - ping: Heartbeat (responds with pong)
+        - subscribe_model: Subscribe to specific record updates
+        - unsubscribe_model: Unsubscribe from record updates
+        - subscribe_live_tracking: Subscribe to ALL GPS/position updates (ShuttleBee)
+        - subscribe_model_channel: Subscribe to ALL events for a model
+        - unsubscribe_model_channel: Unsubscribe from model channel
+        - request_driver_location: Dispatcher requests driver's current location (on-demand)
+        - location_response: Driver responds with current location
+        - driver_status_update: Driver updates their status (online, offline, busy)
+
+    Channels:
+        - system_status: System connection status changes
+        - operations: Long-running operation progress
+        - audit: Audit log events
+        - cache: Cache invalidation events
+        - live_tracking: Real-time GPS/position updates (ShuttleBee)
+        - model:{model_name}: All events for a specific model
 
     Response Format:
         {
-            "type": "notification|status|error|pong",
+            "type": "notification|status|error|pong|webhook_event|model_update|location_response|driver_status",
             "channel": "...",
             "data": {...},
             "timestamp": "2024-01-15T12:00:00"
         }
 
-    Example:
-        # JavaScript client
-        const ws = new WebSocket('ws://localhost:8000/api/v1/ws/123');
+    ShuttleBee Live Tracking:
+        When trip.state == 'ongoing':
+            - Driver sends GPS automatically every 10 seconds
+            - Data is saved to shuttle.vehicle.position in Odoo
+            - Webhook broadcasts to all live_tracking subscribers
 
-        ws.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            console.log('Received:', data);
-        };
+        When trip.state != 'ongoing':
+            - Driver does NOT send GPS automatically
+            - Dispatcher can request location on-demand using request_driver_location
+            - Driver responds with current location (not saved to DB)
 
-        // Subscribe to channel
-        ws.send(JSON.stringify({
-            type: 'subscribe',
-            channel: 'system_status'
+    Example - Subscribe to live tracking (Flutter/Dart - Dispatcher):
+        // Connect to WebSocket
+        final ws = WebSocketChannel.connect(
+            Uri.parse('ws://bridgecore:8000/api/v1/ws/$userId')
+        );
+
+        // Subscribe to live tracking
+        ws.sink.add(jsonEncode({
+            'type': 'subscribe_live_tracking'
+        }));
+
+        // Listen for updates
+        ws.stream.listen((message) {
+            final data = jsonDecode(message);
+            if (data['type'] == 'webhook_event') {
+                // Auto update from ongoing trip
+                updateDriverPosition(data['data']);
+            } else if (data['type'] == 'location_response') {
+                // On-demand location response
+                updateDriverPosition(data);
+            }
+        });
+
+    Example - Request driver location (Dispatcher):
+        ws.sink.add(jsonEncode({
+            'type': 'request_driver_location',
+            'driver_id': 5,
+            'request_id': 'uuid-here'
+        }));
+
+    Example - Respond to location request (Driver):
+        ws.sink.add(jsonEncode({
+            'type': 'location_response',
+            'request_id': 'uuid-here',
+            'requester_id': 1,
+            'latitude': 33.5731,
+            'longitude': -7.5898,
+            'speed': 45.0,
+            'heading': 180
+        }));
+
+    Example - Subscribe to specific model:
+        ws.sink.add(jsonEncode({
+            'type': 'subscribe_model_channel',
+            'model': 'shuttle.vehicle.position'
         }));
     """
     await manager.connect(websocket, user_id)
@@ -376,6 +540,148 @@ async def websocket_endpoint(websocket: WebSocket, user_id: int):
                         await websocket.send_json({
                             "type": "error",
                             "message": "system_id, model, and record_ids are required"
+                        })
+
+                elif message_type == "subscribe_live_tracking":
+                    # Subscribe to live tracking channel for real-time GPS updates
+                    # This receives ALL position updates from ShuttleBee
+                    await manager.subscribe_to_channel("live_tracking", user_id)
+                    await websocket.send_json({
+                        "type": "status",
+                        "message": "Subscribed to live tracking",
+                        "channel": "live_tracking",
+                        "models": [
+                            "shuttle.vehicle.position",
+                            "shuttle.gps.position", 
+                            "shuttle.trip"
+                        ]
+                    })
+
+                elif message_type == "subscribe_model_channel":
+                    # Subscribe to ALL events for a specific model
+                    # Example: subscribe to all shuttle.vehicle.position creates
+                    model = message.get("model")
+                    if model:
+                        channel = f"model:{model}"
+                        await manager.subscribe_to_channel(channel, user_id)
+                        await websocket.send_json({
+                            "type": "status",
+                            "message": f"Subscribed to all {model} events",
+                            "channel": channel,
+                            "model": model
+                        })
+                    else:
+                        await websocket.send_json({
+                            "type": "error",
+                            "message": "model is required for subscribe_model_channel"
+                        })
+
+                elif message_type == "unsubscribe_model_channel":
+                    # Unsubscribe from model channel
+                    model = message.get("model")
+                    if model:
+                        channel = f"model:{model}"
+                        await manager.unsubscribe_from_channel(channel, user_id)
+                        await websocket.send_json({
+                            "type": "status",
+                            "message": f"Unsubscribed from {model} events",
+                            "channel": channel
+                        })
+                    else:
+                        await websocket.send_json({
+                            "type": "error",
+                            "message": "model is required"
+                        })
+
+                # ═══════════════════════════════════════════════════════════
+                # ShuttleBee Live Tracking Commands
+                # ═══════════════════════════════════════════════════════════
+
+                elif message_type == "request_driver_location":
+                    # Dispatcher requests driver's current location
+                    # Used when trip is NOT ongoing (driver doesn't send automatically)
+                    driver_id = message.get("driver_id")
+                    request_id = message.get("request_id")
+                    
+                    if driver_id and request_id:
+                        # Check if driver is connected
+                        if driver_id in manager.active_connections:
+                            # Send request to driver
+                            await manager.send_personal_message({
+                                "type": "request_location",
+                                "request_id": request_id,
+                                "requester_id": user_id,
+                                "timestamp": datetime.now().isoformat()
+                            }, driver_id)
+                            
+                            await websocket.send_json({
+                                "type": "status",
+                                "message": f"Location request sent to driver {driver_id}",
+                                "request_id": request_id,
+                                "driver_id": driver_id
+                            })
+                        else:
+                            await websocket.send_json({
+                                "type": "error",
+                                "message": f"Driver {driver_id} is not connected",
+                                "request_id": request_id,
+                                "driver_id": driver_id
+                            })
+                    else:
+                        await websocket.send_json({
+                            "type": "error",
+                            "message": "driver_id and request_id are required"
+                        })
+
+                elif message_type == "location_response":
+                    # Driver responds with current location
+                    # Forward to the dispatcher who requested it
+                    request_id = message.get("request_id")
+                    requester_id = message.get("requester_id")
+                    
+                    if requester_id:
+                        await manager.send_personal_message({
+                            "type": "location_response",
+                            "request_id": request_id,
+                            "driver_id": user_id,
+                            "latitude": message.get("latitude"),
+                            "longitude": message.get("longitude"),
+                            "speed": message.get("speed"),
+                            "heading": message.get("heading"),
+                            "accuracy": message.get("accuracy"),
+                            "timestamp": message.get("timestamp") or datetime.now().isoformat()
+                        }, requester_id)
+                        
+                        logger.info(f"Location response from driver {user_id} forwarded to {requester_id}")
+                    else:
+                        await websocket.send_json({
+                            "type": "error",
+                            "message": "requester_id is required in location_response"
+                        })
+
+                elif message_type == "driver_status_update":
+                    # Driver updates their status (online, offline, busy, etc.)
+                    status = message.get("status")  # online, offline, busy, available
+                    vehicle_id = message.get("vehicle_id")
+                    
+                    if status:
+                        # Broadcast to all live_tracking subscribers
+                        await manager.broadcast_to_channel("live_tracking", {
+                            "type": "driver_status",
+                            "driver_id": user_id,
+                            "status": status,
+                            "vehicle_id": vehicle_id,
+                            "timestamp": datetime.now().isoformat()
+                        })
+                        
+                        await websocket.send_json({
+                            "type": "status",
+                            "message": f"Status updated to {status}"
+                        })
+                    else:
+                        await websocket.send_json({
+                            "type": "error",
+                            "message": "status is required"
                         })
 
                 else:
@@ -763,3 +1069,112 @@ except ImportError:
 
     async def subscribe_to_redis_events():
         pass
+
+
+# ===== Conversation WebSocket Endpoints =====
+
+async def authenticate_websocket_token(token: Optional[str]) -> tuple[int, int]:
+    """
+    Authenticate WebSocket connection via JWT token
+    
+    ⚠️ تصحيح أمني: authentication عبر token في query/header
+    
+    Returns:
+        (user_id, partner_id) tuple
+    """
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing authentication token"
+        )
+    
+    payload = decode_tenant_token(token)
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token"
+        )
+    
+    user_id_str = payload.get("sub")
+    if not user_id_str:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token payload"
+        )
+    
+    # For now, we'll get partner_id later from Odoo
+    # This is a simplified version - in production you might want to cache partner_id
+    user_id = int(user_id_str) if user_id_str.isdigit() else hash(user_id_str) % 1000000
+    partner_id = payload.get("partner_id")  # If included in token
+    
+    return user_id, partner_id or user_id  # Fallback to user_id if partner_id not available
+
+
+@router.websocket("/ws/conversations")
+async def websocket_conversations(
+    websocket: WebSocket,
+    token: Optional[str] = Query(None)  # ⚠️ تصحيح أمني: auth via token
+):
+    """
+    WebSocket endpoint for real-time conversations
+    
+    ⚠️ تصحيح أمني مهم:
+    1. لا نستخدم user_id في path (security risk)
+    2. نستخرج user/partner من JWT token في query
+    3. نستخدم connection-based subscriptions
+    
+    Usage:
+        ws://host/ws/conversations?token=<jwt_token>
+        
+    Messages:
+        {"action": "subscribe_channel", "channel_id": 123}
+        {"action": "unsubscribe_channel", "channel_id": 123}
+    """
+    try:
+        # Authenticate via token
+        user_id, partner_id = await authenticate_websocket_token(token)
+        
+        await manager.connect(websocket, user_id)
+        
+        try:
+            while True:
+                data = await websocket.receive_json()
+                action = data.get("action")
+                
+                if action == "subscribe_channel":
+                    channel_id = data.get("channel_id")
+                    if channel_id:
+                        await manager.subscribe_to_conversation_channel(
+                            websocket, user_id, partner_id, channel_id
+                        )
+                        await websocket.send_json({
+                            "status": "subscribed",
+                            "channel_id": channel_id
+                        })
+                
+                elif action == "unsubscribe_channel":
+                    channel_id = data.get("channel_id")
+                    if channel_id:
+                        await manager.unsubscribe_from_conversation_channel(
+                            websocket, channel_id
+                        )
+                        await websocket.send_json({
+                            "status": "unsubscribed",
+                            "channel_id": channel_id
+                        })
+                
+                else:
+                    await websocket.send_json({
+                        "status": "error",
+                        "message": f"Unknown action: {action}"
+                    })
+                    
+        except WebSocketDisconnect:
+            manager.disconnect(websocket, user_id)
+            logger.info(f"WebSocket disconnected for user {user_id}")
+    except HTTPException as e:
+        logger.warning(f"WebSocket authentication failed: {e.detail}")
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+    except Exception as e:
+        logger.error(f"WebSocket error: {e}")
+        await websocket.close(code=status.WS_1011_INTERNAL_ERROR)

@@ -54,6 +54,7 @@ BridgeCore is an enterprise-grade multi-tenant middleware platform that serves a
 - **⚡ Real-time Sync**: Track all Odoo changes via webhook system with smart multi-user synchronization
 - **📊 Smart Synchronization**: Efficient incremental sync per user/device with automatic conflict resolution
 - **📱 Offline-First Sync**: Complete offline sync with push/pull, conflict resolution, and batch processing
+- **💬 Odoo Conversations**: Full support for Odoo messaging (Channels, Direct Messages, Chatter) with real-time WebSocket
 - **🎓 Moodle LMS Integration**: Full course, user, and enrolment management for educational platforms
 - **🎨 Admin Dashboard**: Full React-based admin panel for comprehensive platform and system management
 - **🚦 Rate Limiting**: Per-tenant rate limits with Redis for fair resource allocation
@@ -1639,6 +1640,110 @@ Authorization: Bearer {tenant_token}
 POST /api/v2/sync/reset?user_id=1&device_id=device_123
 Authorization: Bearer {tenant_token}
 ```
+
+---
+
+## 💬 Odoo Conversations (NEW!)
+
+**NEW!** BridgeCore now includes full support for Odoo 18.0 messaging system including Channels, Direct Messages, and Chatter.
+
+### Features
+
+✅ **Channel Management**: List public, private, and group-based channels
+✅ **Direct Messages**: Support for one-on-one conversations
+✅ **Chatter Messages**: Access messages on any Odoo record (sale.order, res.partner, etc.)
+✅ **Real-time Messaging**: WebSocket support for instant message delivery
+✅ **Message Sending**: Send messages to channels or record chatter
+✅ **Security**: JWT-based authentication, partner_id derived from session
+✅ **Webhook Integration**: Automatic webhook tracking for all conversation events
+
+### Conversation Types
+
+- **Channels**: Public channels, private channels, group-based channels
+- **Direct Messages**: One-on-one conversations between users
+- **Chatter**: Messages attached to Odoo records (sale.order, purchase.order, etc.)
+
+### API Endpoints
+
+```bash
+# Get all channels for current user
+GET /api/v1/conversations/channels
+Authorization: Bearer {token}
+
+# Get messages in a channel
+GET /api/v1/conversations/channels/{channel_id}/messages?limit=50&offset=0
+Authorization: Bearer {token}
+
+# Get chatter messages for a record
+GET /api/v1/conversations/chatter/{model}/{record_id}?limit=50
+Authorization: Bearer {token}
+
+# Send a message
+POST /api/v1/conversations/messages/send
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "model": "mail.channel",  # or "sale.order", etc.
+  "res_id": 123,
+  "body": "<p>Hello everyone!</p>",
+  "partner_ids": [1, 2, 3],  # Optional: specific recipients
+  "subject": "Message subject",  # Optional
+  "parent_id": 456  # Optional: reply to message
+}
+
+# Get direct message channels
+GET /api/v1/conversations/direct-messages
+Authorization: Bearer {token}
+```
+
+### WebSocket Real-time Messaging
+
+```bash
+# Connect to conversation WebSocket
+WS /ws/conversations?token={access_token}
+
+# Subscribe to channel
+{
+  "action": "subscribe_channel",
+  "channel_id": 123
+}
+
+# Unsubscribe from channel
+{
+  "action": "unsubscribe_channel",
+  "channel_id": 123
+}
+
+# Incoming messages
+{
+  "type": "channel_message",
+  "channel_id": 123,
+  "message": {
+    "id": 789,
+    "body": "<p>New message</p>",
+    "author_id": 5,
+    "date": "2024-01-15T10:30:00Z",
+    ...
+  }
+}
+```
+
+### Security Notes
+
+⚠️ **Important Security Features:**
+- All endpoints derive `partner_id` from JWT token (not from request parameters)
+- `author_id` is automatically derived from Odoo session (not accepted from client)
+- WebSocket authentication via token in query parameter
+- Full RBAC support via Odoo's security rules
+
+### Use Cases
+
+- **Team Communication**: Public/private channels for departments, projects
+- **Customer Support**: Direct messages with customers
+- **Record Discussion**: Chatter messages on sales orders, invoices, etc.
+- **Notifications**: Real-time notifications via channels
+- **Collaboration**: Group discussions on records or topics
 
 ---
 

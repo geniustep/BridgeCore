@@ -38,12 +38,18 @@ APP_TYPE_MODELS = {
         "product.template",
         "product.product",
         "product.category",
+        # Conversations
+        "mail.message",
+        "mail.channel",
     ],
     "delivery_app": [
         "stock.picking",
         "stock.move",
         "stock.move.line",
         "res.partner",
+        # Conversations
+        "mail.message",
+        "mail.channel",
     ],
     "warehouse_app": [
         "stock.picking",
@@ -52,6 +58,9 @@ APP_TYPE_MODELS = {
         "stock.quant",
         "product.product",
         "stock.location",
+        # Conversations
+        "mail.message",
+        "mail.channel",
     ],
     "manager_app": [
         "sale.order",
@@ -60,12 +69,25 @@ APP_TYPE_MODELS = {
         "res.partner",
         "hr.expense",
         "project.project",
+        # Conversations
+        "mail.message",
+        "mail.channel",
     ],
     "mobile_app": [
         "sale.order",
         "res.partner",
         "product.template",
         "product.product",
+        # Conversations
+        "mail.message",
+        "mail.channel",
+    ],
+    # New app type for messaging
+    "messaging_app": [
+        "mail.message",
+        "mail.channel",
+        "res.partner",
+        "res.users",
     ],
 }
 

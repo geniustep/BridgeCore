@@ -32,12 +32,18 @@ APP_TYPE_MODELS = {
         "product.template",
         "product.product",
         "product.category",
+        # Conversations
+        "mail.message",
+        "mail.channel",
     ],
     "delivery_app": [
         "stock.picking",
         "stock.move",
         "stock.move.line",
         "res.partner",
+        # Conversations
+        "mail.message",
+        "mail.channel",
     ],
     "warehouse_app": [
         "stock.picking",
@@ -46,6 +52,9 @@ APP_TYPE_MODELS = {
         "stock.quant",
         "product.product",
         "stock.location",
+        # Conversations
+        "mail.message",
+        "mail.channel",
     ],
     "manager_app": [
         "sale.order",
@@ -54,12 +63,25 @@ APP_TYPE_MODELS = {
         "res.partner",
         "hr.expense",
         "project.project",
+        # Conversations
+        "mail.message",
+        "mail.channel",
     ],
     "mobile_app": [
         "sale.order",
         "res.partner",
         "product.template",
         "product.product",
+        # Conversations
+        "mail.message",
+        "mail.channel",
+    ],
+    # New app type for messaging
+    "messaging_app": [
+        "mail.message",
+        "mail.channel",
+        "res.partner",
+        "res.users",
     ],
 }
 
@@ -891,14 +913,28 @@ class WebhookService:
             # We don't need to do anything here - the event is already available for Pull-based access
             # This Push endpoint is just for real-time notification of critical events
 
+            # Handle conversation webhooks specially
+            if model in ["mail.message", "mail.channel"]:
+                await self._handle_conversation_webhook(
+                    model=model,
+                    record_id=record_id,
+                    event_type=event_type,
+                    payload=payload
+                )
+            
             # Process critical events immediately
             if priority == "high":
                 logger.info(f"Processing high-priority event: {model}:{record_id}")
-                # Here you can add immediate processing logic:
-                # - Send notifications
-                # - Update cache
-                # - Trigger WebSocket broadcast
-                # - etc.
+                
+                # Broadcast via WebSocket to subscribed clients
+                await self._broadcast_webhook_event(
+                    model=model,
+                    record_id=record_id,
+                    event_type=event_type,
+                    priority=priority,
+                    data=payload.get("data", {}),
+                    timestamp=timestamp
+                )
 
             # Return success response
             return {
@@ -918,3 +954,216 @@ class WebhookService:
         except Exception as e:
             logger.error(f"Error processing webhook: {e}")
             raise
+
+    async def _handle_conversation_webhook(
+        self,
+        model: str,
+        record_id: int,
+        event_type: str,
+        payload: dict
+    ):
+        """
+        Handle conversation webhook events (mail.message, mail.channel)
+        
+        ⚠️ تصحيح مهم: تحديد المستلمين بدقة عبر:
+        1. Channel messages → channel subscribers
+        2. Chatter messages → record followers (mail.followers)
+        3. Routing: channel:{id}, thread:{model}:{id}, inbox:{partner_id}
+        """
+        try:
+            from app.api.routes.websocket import manager
+            
+            message_data = payload.get("data", {})
+            
+            if model == "mail.message":
+                if event_type == "create":
+                    related_model = message_data.get("model")  # mail.channel, sale.order, etc.
+                    res_id = message_data.get("res_id")
+                    partner_ids = message_data.get("partner_ids", [])
+                    
+                    if related_model == "mail.channel":
+                        # Channel message: broadcast to channel subscribers
+                        routing_key = f"channel:{res_id}"
+                        await manager.broadcast_to_routing(
+                            routing_key=routing_key,
+                            message={
+                                "type": "channel_message",
+                                "channel_id": res_id,
+                                "message": message_data,
+                                "timestamp": payload.get("timestamp")
+                            }
+                        )
+                    else:
+                        # Chatter message: notify record followers
+                        # Fetch followers from mail.followers
+                        try:
+                            followers = await self._get_record_followers(related_model, res_id)
+                            
+                            # Notify each follower via inbox routing
+                            for follower_partner_id in followers:
+                                routing_key = f"inbox:{follower_partner_id}"
+                                await manager.broadcast_to_routing(
+                                    routing_key=routing_key,
+                                    message={
+                                        "type": "chatter_message",
+                                        "model": related_model,
+                                        "res_id": res_id,
+                                        "message": message_data,
+                                        "timestamp": payload.get("timestamp")
+                                    }
+                                )
+                            
+                            # Also broadcast to thread subscribers
+                            thread_routing_key = f"thread:{related_model}:{res_id}"
+                            await manager.broadcast_to_routing(
+                                routing_key=thread_routing_key,
+                                message={
+                                    "type": "thread_message",
+                                    "model": related_model,
+                                    "res_id": res_id,
+                                    "message": message_data,
+                                    "timestamp": payload.get("timestamp")
+                                }
+                            )
+                        except Exception as e:
+                            logger.error(f"Error getting followers for {related_model}:{res_id}: {e}")
+            
+            elif model == "mail.channel":
+                if event_type == "write":
+                    # Channel updated (members added/removed, etc.)
+                    channel_data = message_data
+                    routing_key = f"channel:{record_id}"
+                    await manager.broadcast_to_routing(
+                        routing_key=routing_key,
+                        message={
+                            "type": "channel_updated",
+                            "channel_id": record_id,
+                            "data": channel_data,
+                            "timestamp": payload.get("timestamp")
+                        }
+                    )
+                    
+        except Exception as e:
+            logger.error(f"Error handling conversation webhook: {e}")
+            # Don't raise - we don't want to fail the whole webhook processing
+    
+    async def _get_record_followers(
+        self,
+        model: str,
+        res_id: int
+    ) -> List[int]:
+        """
+        Get partner IDs of followers for a record
+        
+        ⚠️ مهم: نستخدم mail.followers للحصول على followers
+        """
+        try:
+            domain = [
+                ("res_model", "=", model),
+                ("res_id", "=", res_id)
+            ]
+            followers = self.odoo.search_read(
+                "mail.followers",
+                domain,
+                fields=["partner_id"]
+            )
+            # Extract partner_ids (filter None values)
+            partner_ids = []
+            for f in followers:
+                partner_id = f.get("partner_id")
+                if partner_id:
+                    if isinstance(partner_id, (list, tuple)) and len(partner_id) > 0:
+                        partner_ids.append(partner_id[0])
+                    elif isinstance(partner_id, int):
+                        partner_ids.append(partner_id)
+            return partner_ids
+        except Exception as e:
+            logger.error(f"Error getting followers: {e}")
+            return []
+    
+    async def _broadcast_webhook_event(
+        self,
+        model: str,
+        record_id: int,
+        event_type: str,
+        priority: str,
+        data: dict,
+        timestamp: str = None
+    ):
+        """
+        Broadcast webhook event via WebSocket to all subscribed clients.
+        
+        This enables real-time updates for:
+        - Live tracking (shuttle.vehicle.position, shuttle.gps.position)
+        - Trip status changes (shuttle.trip)
+        - Any other model with WebSocket subscribers
+        
+        Args:
+            model: Odoo model name (e.g., 'shuttle.vehicle.position')
+            record_id: Record ID
+            event_type: Event type ('create', 'write', 'unlink')
+            priority: Event priority ('high', 'medium', 'low')
+            data: Event payload data
+            timestamp: Event timestamp (ISO format)
+        """
+        try:
+            from app.api.routes.websocket import manager
+            
+            # Prepare the message
+            message = {
+                "type": "webhook_event",
+                "channel": "live_tracking",
+                "model": model,
+                "record_id": record_id,
+                "event": event_type,
+                "priority": priority,
+                "data": data,
+                "timestamp": timestamp or datetime.utcnow().isoformat()
+            }
+            
+            # 1. Broadcast to model-specific channel subscribers
+            # Channel format: "model:{model_name}" e.g., "model:shuttle.vehicle.position"
+            model_channel = f"model:{model}"
+            if model_channel in manager.channel_subscriptions:
+                for user_id in manager.channel_subscriptions[model_channel]:
+                    await manager.send_personal_message(message, user_id)
+                logger.debug(
+                    f"Broadcast {event_type} on {model}:{record_id} "
+                    f"to {len(manager.channel_subscriptions.get(model_channel, []))} model subscribers"
+                )
+            
+            # 2. Broadcast to live_tracking channel (for all tracking events)
+            # This is useful for managers who want to see ALL position updates
+            live_tracking_models = [
+                "shuttle.vehicle.position",
+                "shuttle.gps.position",
+                "shuttle.trip"
+            ]
+            if model in live_tracking_models:
+                if "live_tracking" in manager.channel_subscriptions:
+                    for user_id in manager.channel_subscriptions["live_tracking"]:
+                        await manager.send_personal_message(message, user_id)
+                    logger.debug(
+                        f"Broadcast to live_tracking channel: {model}:{record_id}"
+                    )
+            
+            # 3. Broadcast to specific record subscribers
+            # This uses the existing model_subscriptions system
+            # Useful when tracking specific vehicles or trips
+            await manager.broadcast_model_update(
+                system_id="odoo",  # Default system ID
+                model=model,
+                record_id=record_id,
+                operation=event_type,
+                data=data
+            )
+            
+            logger.info(
+                f"WebSocket broadcast complete: {model}:{record_id} ({event_type})"
+            )
+            
+        except ImportError as e:
+            logger.warning(f"WebSocket manager not available: {e}")
+        except Exception as e:
+            # Don't fail the webhook if WebSocket broadcast fails
+            logger.error(f"Failed to broadcast via WebSocket: {e}")

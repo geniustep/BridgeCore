@@ -30,6 +30,7 @@ from app.modules.webhook import router as webhook_router_v1
 from app.modules.webhook import router_v2 as webhook_router_v2
 from app.modules.offline_sync import router as offline_sync_router
 from app.modules.odoo_sync import router as odoo_sync_router
+from app.modules.conversation import router as conversation_router
 from app.api.routes.moodle.main import router as moodle_router
 from app.api.routes.triggers import router as triggers_router
 from app.api.routes.notifications import router as notifications_router
@@ -154,7 +155,7 @@ app.include_router(systems.router)
 app.include_router(batch.router)
 app.include_router(barcode.router)
 app.include_router(files.router)
-app.include_router(websocket.router)
+app.include_router(websocket.router, prefix="/api/v1")
 
 # Admin routers (NEW)
 app.include_router(admin_auth.router)  # /admin/auth/*
@@ -182,6 +183,9 @@ app.include_router(moodle_router, prefix="/api/v1")  # /api/v1/moodle/*
 # Triggers & Notifications routers (NEW)
 app.include_router(triggers_router)  # /api/v1/triggers/*
 app.include_router(notifications_router)  # /api/v1/notifications/*
+
+# Conversation router (NEW)
+app.include_router(conversation_router, prefix="/api/v1")  # /api/v1/conversations/*
 
 # Add metrics endpoint
 app.add_api_route("/metrics", metrics_endpoint, methods=["GET"], tags=["Monitoring"])
