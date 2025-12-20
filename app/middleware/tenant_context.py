@@ -8,12 +8,14 @@ from starlette.types import ASGIApp
 from typing import Callable
 from uuid import UUID
 import time
+import asyncio
 
 from app.core.security import decode_tenant_token
 from app.db.session import AsyncSessionLocal
 from app.repositories.tenant_repository import TenantRepository
 from app.models.tenant import TenantStatus
 from loguru import logger
+from datetime import datetime
 
 
 class TenantContextMiddleware(BaseHTTPMiddleware):
@@ -116,44 +118,110 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
                 else:
                     self._tenant_cache.pop(tenant_id, None)
 
-            async with AsyncSessionLocal() as session:
-                tenant_repo = TenantRepository(session)
-                tenant = await tenant_repo.get_by_id_uuid(UUID(tenant_id))
+            # Retry logic for database operations
+            max_retries = 3
+            last_exception = None
+            tenant = None
+            
+            for attempt in range(max_retries):
+                try:
+                    async with AsyncSessionLocal() as session:
+                        tenant_repo = TenantRepository(session)
+                        tenant = await tenant_repo.get_by_id_uuid(UUID(tenant_id))
 
-                if not tenant:
-                    return JSONResponse(
-                        status_code=status.HTTP_404_NOT_FOUND,
-                        content={"detail": "Tenant not found"},
-                    )
+                        if not tenant:
+                            return JSONResponse(
+                                status_code=status.HTTP_404_NOT_FOUND,
+                                content={"detail": "Tenant not found"},
+                            )
 
-                # Check tenant status
-                if tenant.status == TenantStatus.SUSPENDED:
-                    return JSONResponse(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        content={"detail": "Tenant account is suspended. Please contact support."},
-                    )
+                        # Check tenant status
+                        if tenant.status == TenantStatus.SUSPENDED:
+                            return JSONResponse(
+                                status_code=status.HTTP_403_FORBIDDEN,
+                                content={"detail": "Tenant account is suspended. Please contact support."},
+                            )
 
-                if tenant.status == TenantStatus.DELETED:
-                    return JSONResponse(
-                        status_code=status.HTTP_410_GONE,
-                        content={"detail": "Tenant account has been deleted"},
-                    )
+                        if tenant.status == TenantStatus.DELETED:
+                            return JSONResponse(
+                                status_code=status.HTTP_410_GONE,
+                                content={"detail": "Tenant account has been deleted"},
+                            )
 
-                # Update last active timestamp
-                await tenant_repo.update_last_active(UUID(tenant_id))
+                        # Attach tenant info to request state BEFORE update (so request can proceed even if update fails)
+                        request.state.tenant_id = tenant_id
+                        request.state.user_id = user_id
+                        request.state.tenant = tenant
 
-                # Attach tenant info to request state
-                request.state.tenant_id = tenant_id
-                request.state.user_id = user_id
-                request.state.tenant = tenant
+                        # Cache tenant briefly to reduce DB hits under load
+                        self._tenant_cache[tenant_id] = (now + self._tenant_cache_ttl_seconds, tenant)
+                        
+                        logger.debug(f"[TenantContext] Tenant context set: tenant_id={tenant_id}, odoo_url={getattr(tenant, 'odoo_url', 'N/A')}")
+                        
+                        # Update last active timestamp (non-blocking, don't fail if this errors)
+                        # Do this AFTER setting request state so request can proceed
+                        try:
+                            tenant.last_active_at = datetime.utcnow()
+                            await session.commit()
+                        except Exception as update_error:
+                            logger.warning(
+                                f"Failed to update last_active_at for tenant {tenant_id}: {str(update_error)}"
+                            )
+                            # Rollback and continue - request state is already set
+                            try:
+                                await session.rollback()
+                            except:
+                                pass
+                        
+                        # Success - break retry loop
+                        break
+                        
+                except Exception as db_error:
+                    last_exception = db_error
+                    
+                    if attempt < max_retries - 1:
+                        logger.warning(
+                            f"Database error in tenant context (attempt {attempt + 1}/{max_retries}): {str(db_error)}",
+                            exc_info=True
+                        )
+                        await asyncio.sleep(0.1 * (attempt + 1))  # Exponential backoff
+                    else:
+                        # If we have a cached tenant, use it as fallback
+                        if tenant_id in self._tenant_cache:
+                            cached_expires, cached_tenant = self._tenant_cache[tenant_id]
+                            if cached_expires > time.time():
+                                logger.warning(f"Using cached tenant {tenant_id} due to DB error")
+                                request.state.tenant_id = tenant_id
+                                request.state.user_id = user_id
+                                request.state.tenant = cached_tenant
+                                break
+                        raise
 
-                # Cache tenant briefly to reduce DB hits under load
-                self._tenant_cache[tenant_id] = (now + self._tenant_cache_ttl_seconds, tenant)
-                
-                logger.debug(f"[TenantContext] Tenant context set: tenant_id={tenant_id}, odoo_url={tenant.odoo_url}")
-
+        except ValueError as ve:
+            # Invalid UUID format
+            logger.error(f"Invalid tenant_id format: {tenant_id}, error: {str(ve)}")
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={"detail": "Invalid tenant ID format"},
+            )
         except Exception as e:
-            logger.error(f"Error in tenant context middleware: {str(e)}")
+            error_details = {
+                "tenant_id": tenant_id,
+                "user_id": user_id,
+                "path": request.url.path,
+                "error_type": type(e).__name__,
+                "error_message": str(e)
+            }
+            logger.error(
+                f"Error in tenant context middleware: {str(e)}",
+                exc_info=True,
+                extra=error_details
+            )
+            
+            # Log more details for debugging
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")
+            
             # Under load, DB connectivity/pool issues can happen.
             # Return a proper JSON response instead of raising inside BaseHTTPMiddleware,
             # which can otherwise surface as plain-text 500.

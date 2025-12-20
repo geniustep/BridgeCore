@@ -31,15 +31,19 @@ class ConversationService:
         if cached:
             return cached
         
-        domain = [
-            ("channel_partner_ids", "in", [partner_id])
-        ]
-        channels = self.odoo.search_read(
-            "mail.channel",
-            domain,
-            fields=["id", "name", "channel_type", "public", "description", "channel_partner_ids"],
-            limit=100
-        )
+        try:
+            domain = [
+                ("channel_partner_ids", "in", [partner_id])
+            ]
+            channels = self.odoo.search_read(
+                "mail.channel",
+                domain,
+                fields=["id", "name", "channel_type", "public", "description", "channel_partner_ids"],
+                limit=100
+            )
+        except Exception as e:
+            logger.error(f"Failed to get channels for partner {partner_id}: {str(e)}")
+            raise
         
         # Transform channel_partner_ids to members_partner_ids for consistency
         for channel in channels:
@@ -215,6 +219,44 @@ class ConversationService:
             limit=100
         )
         return channels
+    
+    async def get_or_create_dm_channel(self, partner_ids: List[int]) -> Dict:
+        """
+        Get or create a direct message channel with specified partners
+        
+        ⚠️ مهم: يستخدم channel_get method من Odoo (نفس ما يستخدمه Discuss app)
+        
+        This is equivalent to Odoo's:
+        - discuss.channel.channel_get(partners_to=[196], force_open=True)
+        - أو mail.channel.channel_get(partners_to=[196], force_open=True)
+        
+        Args:
+            partner_ids: List of partner IDs to include in DM channel
+            
+        Returns:
+            Dict with channel information in Odoo's format:
+            {
+                "discuss.channel": [...],
+                "discuss.channel.member": [...],
+                "res.partner": [...]
+            }
+            
+        Example:
+            channel = await service.get_or_create_dm_channel([196])
+            channel_id = channel.get('discuss.channel', [{}])[0].get('id')
+        """
+        # Use mail.channel.channel_get (works with discuss.channel too in Odoo 18)
+        # channel_get returns a dict with 'discuss.channel', 'discuss.channel.member', 'res.partner' keys
+        result = self.odoo.call_kw(
+            "mail.channel",
+            "channel_get",
+            [],
+            {
+                "partners_to": partner_ids,
+                "force_open": True
+            }
+        )
+        return result
     
     async def subscribe_followers(
         self,

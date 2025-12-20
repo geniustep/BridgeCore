@@ -15,19 +15,20 @@ from app.modules.conversation.schemas import (
     MailMessageData,
 )
 from app.modules.conversation.service import ConversationService
-from app.core.dependencies import get_current_tenant_user, get_cache_service, get_db
+from app.core.dependencies import get_current_tenant_user, get_cache_service, get_db, get_odoo_adapter
 from app.models.tenant_user import TenantUser
 from app.services.cache_service import CacheService
 from app.services.tenant_service import TenantService
 from app.utils.odoo_client import OdooClient
+from app.adapters.odoo_adapter import OdooAdapter
 from loguru import logger
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
 
 async def get_conversation_service(
+    adapter: OdooAdapter = Depends(get_odoo_adapter),
     current_user: TenantUser = Depends(get_current_tenant_user),
-    db: AsyncSession = Depends(get_db),
     cache_service: CacheService = Depends(get_cache_service)
 ) -> ConversationService:
     """
@@ -35,43 +36,47 @@ async def get_conversation_service(
     
     ⚠️ تصحيح أمني: user/partner يأتي من JWT فقط
     
-    Uses same pattern as webhook router - gets Odoo session via adapter
+    Uses same pattern as Moodle router - gets Odoo adapter via Depends
     """
-    from app.core.dependencies import get_odoo_adapter
-    
-    # Get Odoo adapter for tenant
-    adapter = await get_odoo_adapter(current_user, db)
-    
-    # Get session_id from adapter (OdooAdapter stores it in session_id attribute)
-    session_id = getattr(adapter, 'session_id', None)
-    
-    if not session_id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Odoo session not available. Please ensure Odoo is connected."
+    try:
+        # adapter is already resolved by FastAPI's dependency injection
+        
+        # Get session_id from adapter (OdooAdapter stores it in session_id attribute)
+        session_id = getattr(adapter, 'session_id', None)
+        
+        if not session_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Odoo session not available. Please ensure Odoo is connected."
+            )
+        
+        # Get base_url from adapter's url attribute
+        if not adapter.url:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Odoo URL not configured"
+            )
+        
+        base_url = adapter.url.rstrip('/')
+        if base_url.endswith('/odoo'):
+            base_url = base_url[:-5].rstrip('/')
+        
+        # Create OdooClient with session
+        odoo_client = OdooClient(
+            base_url=base_url,
+            session_id=session_id,
+            timeout=30
         )
-    
-    # Get tenant for base_url
-    tenant = current_user.tenant
-    if not tenant or not tenant.odoo_url:
+        
+        return ConversationService(odoo_client, cache_service)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating ConversationService: {str(e)}", exc_info=True)
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Tenant Odoo URL not configured"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to initialize conversation service: {str(e)}"
         )
-    
-    # Clean URL (remove /odoo suffix if present)
-    base_url = tenant.odoo_url.rstrip('/')
-    if base_url.endswith('/odoo'):
-        base_url = base_url[:-5].rstrip('/')
-    
-    # Create OdooClient with session
-    odoo_client = OdooClient(
-        base_url=base_url,
-        session_id=session_id,
-        timeout=30
-    )
-    
-    return ConversationService(odoo_client, cache_service)
 
 
 async def get_partner_id_from_user(
@@ -89,12 +94,19 @@ async def get_partner_id_from_user(
             detail="User does not have Odoo user ID"
         )
     
-    # Get user data from Odoo
-    user_data = odoo_client.read(
-        "res.users",
-        [current_user.odoo_user_id],
-        fields=["partner_id"]
-    )
+    try:
+        # Get user data from Odoo
+        user_data = odoo_client.read(
+            "res.users",
+            [current_user.odoo_user_id],
+            fields=["partner_id"]
+        )
+    except Exception as e:
+        logger.error(f"Failed to read Odoo user {current_user.odoo_user_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve user data from Odoo: {str(e)}"
+        )
     
     if not user_data or len(user_data) == 0:
         raise HTTPException(
@@ -131,32 +143,40 @@ async def get_channels(
     
     ⚠️ تصحيح أمني مهم: user_id/partner_id يأتي من JWT فقط، ليس من query params
     """
-    # Get partner_id from user's Odoo record
-    # We need to get odoo_client from service
-    odoo_client = conversation_service.odoo
-    partner_id = await get_partner_id_from_user(current_user, odoo_client)
-    
-    channels = await conversation_service.get_user_channels(partner_id)
-    
-    # Transform to MailChannelData
-    channel_data = []
-    for ch in channels:
-        # Extract partner_ids from channel_partner_ids
-        partner_ids = ch.get("channel_partner_ids", [])
-        if isinstance(partner_ids, list) and len(partner_ids) > 0 and isinstance(partner_ids[0], (list, tuple)):
-            partner_ids = [p[0] if isinstance(p, (list, tuple)) else p for p in partner_ids]
+    try:
+        # Get partner_id from user's Odoo record
+        odoo_client = conversation_service.odoo
+        partner_id = await get_partner_id_from_user(current_user, odoo_client)
         
-        channel_data.append(MailChannelData(
-            id=ch["id"],
-            name=ch["name"],
-            channel_type=ch.get("channel_type", "channel"),
-            public=ch.get("public", "private"),
-            description=ch.get("description"),
-            members_partner_ids=partner_ids,
-            channel_partner_ids=partner_ids,
-        ))
-    
-    return ChannelListResponse(channels=channel_data, total=len(channel_data))
+        channels = await conversation_service.get_user_channels(partner_id)
+        
+        # Transform to MailChannelData
+        channel_data = []
+        for ch in channels:
+            # Extract partner_ids from channel_partner_ids
+            partner_ids = ch.get("channel_partner_ids", [])
+            if isinstance(partner_ids, list) and len(partner_ids) > 0 and isinstance(partner_ids[0], (list, tuple)):
+                partner_ids = [p[0] if isinstance(p, (list, tuple)) else p for p in partner_ids]
+            
+            channel_data.append(MailChannelData(
+                id=ch["id"],
+                name=ch["name"],
+                channel_type=ch.get("channel_type", "channel"),
+                public=ch.get("public", "private"),
+                description=ch.get("description"),
+                members_partner_ids=partner_ids,
+                channel_partner_ids=partner_ids,
+            ))
+        
+        return ChannelListResponse(channels=channel_data, total=len(channel_data))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in get_channels endpoint: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An unexpected error occurred: {str(e)}"
+        )
 
 
 @router.get("/channels/{channel_id}/messages", response_model=MessageListResponse)
@@ -306,3 +326,45 @@ async def get_direct_messages(
         ))
     
     return ChannelListResponse(channels=channel_data, total=len(channel_data))
+
+
+@router.post("/channels/get-or-create-dm", response_model=dict)
+async def get_or_create_dm_channel(
+    partner_ids: List[int],
+    conversation_service: ConversationService = Depends(get_conversation_service),
+):
+    """
+    Get or create a direct message channel with specified partners
+    
+    ⚠️ مهم: يستخدم channel_get method من Odoo (نفس ما يستخدمه Discuss app)
+    
+    This endpoint is equivalent to Odoo's:
+    - discuss.channel.channel_get(partners_to=[196], force_open=True)
+    - أو mail.channel.channel_get(partners_to=[196], force_open=True)
+    
+    Args:
+        partner_ids: List of partner IDs to include in DM channel
+        
+    Returns:
+        Dict with channel information in Odoo's format:
+        {
+            "discuss.channel": [...],
+            "discuss.channel.member": [...],
+            "res.partner": [...]
+        }
+        
+    Example Request:
+        POST /api/v1/conversations/channels/get-or-create-dm
+        {
+            "partner_ids": [196]
+        }
+        
+    Example Response:
+        {
+            "discuss.channel": [{"id": 5, "name": "...", ...}],
+            "discuss.channel.member": [...],
+            "res.partner": [...]
+        }
+    """
+    channel_data = await conversation_service.get_or_create_dm_channel(partner_ids)
+    return channel_data
