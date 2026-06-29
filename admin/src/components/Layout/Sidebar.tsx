@@ -8,6 +8,9 @@ import {
   ApiOutlined,
   BugOutlined,
   PlusOutlined,
+  BellOutlined,
+  SafetyOutlined,
+  StopOutlined,
 } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { APP_NAME } from '@/config/api';
@@ -63,6 +66,23 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed }) => {
           key: '/logs/errors',
           icon: <BugOutlined />,
           label: 'Error Logs',
+        },
+      ],
+    },
+    {
+      key: '/alerts',
+      icon: <BellOutlined />,
+      label: 'Alerts',
+    },
+    {
+      key: 'security-group',
+      icon: <SafetyOutlined />,
+      label: 'Security',
+      children: [
+        {
+          key: '/security/ip-blocks',
+          icon: <StopOutlined />,
+          label: 'IP Blocking',
         },
       ],
     },

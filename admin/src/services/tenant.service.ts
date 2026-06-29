@@ -1,7 +1,7 @@
 // Tenant management service
 import apiClient from './api';
 import { API_ENDPOINTS } from '@/config/api';
-import { Tenant, TenantCreate, TenantUpdate, TenantStatistics, ConnectionTestResult } from '@/types';
+import { Tenant, TenantCreate, TenantUpdate, TenantStatistics, ConnectionTestResult, RateLimitStatus } from '@/types';
 
 export const tenantService = {
   /**
@@ -76,6 +76,22 @@ export const tenantService = {
    */
   async getStatistics(): Promise<TenantStatistics> {
     const response = await apiClient.get<TenantStatistics>(API_ENDPOINTS.TENANT_STATS);
+    return response.data;
+  },
+
+  /**
+   * Get rate limit status
+   */
+  async getRateLimitStatus(id: string): Promise<RateLimitStatus> {
+    const response = await apiClient.get<RateLimitStatus>(`${API_ENDPOINTS.TENANT(id)}/rate-limit`);
+    return response.data;
+  },
+
+  /**
+   * Reset rate limit
+   */
+  async resetRateLimit(id: string, resetType: 'daily' | 'hourly' | 'all' = 'all'): Promise<{ message: string; reset_type: string; deleted_keys: number; keys: string[] }> {
+    const response = await apiClient.post(`${API_ENDPOINTS.TENANT(id)}/rate-limit/reset?reset_type=${resetType}`);
     return response.data;
   },
 };

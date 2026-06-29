@@ -13,11 +13,13 @@ import {
 } from '../types';
 
 class SystemService {
+  private readonly API_PREFIX = '/api';
+
   /**
    * Get all available external systems
    */
   async getAllSystems(enabledOnly: boolean = false): Promise<ExternalSystem[]> {
-    const response = await api.get('/admin/systems', {
+    const response = await api.get(`${this.API_PREFIX}/admin/systems`, {
       params: { enabled_only: enabledOnly }
     });
     return response.data;
@@ -27,7 +29,7 @@ class SystemService {
    * Get specific external system
    */
   async getSystem(systemId: string): Promise<ExternalSystem> {
-    const response = await api.get(`/admin/systems/${systemId}`);
+    const response = await api.get(`${this.API_PREFIX}/admin/systems/${systemId}`);
     return response.data;
   }
 
@@ -35,7 +37,7 @@ class SystemService {
    * Get all systems connected to a tenant
    */
   async getTenantSystems(tenantId: string, activeOnly: boolean = true): Promise<TenantSystem[]> {
-    const response = await api.get(`/admin/tenants/${tenantId}/systems`, {
+    const response = await api.get(`${this.API_PREFIX}/admin/tenants/${tenantId}/systems`, {
       params: { active_only: activeOnly }
     });
     return response.data;
@@ -45,7 +47,7 @@ class SystemService {
    * Add a new system connection to a tenant
    */
   async addTenantSystem(tenantId: string, data: TenantSystemCreate): Promise<TenantSystem> {
-    const response = await api.post(`/admin/tenants/${tenantId}/systems`, data);
+    const response = await api.post(`${this.API_PREFIX}/admin/tenants/${tenantId}/systems`, data);
     return response.data;
   }
 
@@ -57,7 +59,7 @@ class SystemService {
     connectionId: string,
     data: TenantSystemUpdate
   ): Promise<TenantSystem> {
-    const response = await api.put(`/admin/tenants/${tenantId}/systems/${connectionId}`, data);
+    const response = await api.put(`${this.API_PREFIX}/admin/tenants/${tenantId}/systems/${connectionId}`, data);
     return response.data;
   }
 
@@ -65,14 +67,14 @@ class SystemService {
    * Delete tenant system connection
    */
   async deleteTenantSystem(tenantId: string, connectionId: string): Promise<void> {
-    await api.delete(`/admin/tenants/${tenantId}/systems/${connectionId}`);
+    await api.delete(`${this.API_PREFIX}/admin/tenants/${tenantId}/systems/${connectionId}`);
   }
 
   /**
    * Set a system as primary for the tenant
    */
   async setPrimarySystem(tenantId: string, connectionId: string): Promise<{ success: boolean; message: string }> {
-    const response = await api.post(`/admin/tenants/${tenantId}/systems/${connectionId}/set-primary`);
+    const response = await api.post(`${this.API_PREFIX}/admin/tenants/${tenantId}/systems/${connectionId}/set-primary`);
     return response.data;
   }
 
@@ -80,7 +82,7 @@ class SystemService {
    * Test connection to external system (without saving)
    */
   async testConnection(data: SystemConnectionTestRequest): Promise<SystemConnectionTestResponse> {
-    const response = await api.post('/admin/test-connection', data);
+    const response = await api.post(`${this.API_PREFIX}/admin/test-connection`, data);
     return response.data;
   }
 
@@ -88,7 +90,7 @@ class SystemService {
    * Test an existing tenant system connection
    */
   async testExistingConnection(tenantId: string, connectionId: string): Promise<SystemConnectionTestResponse> {
-    const response = await api.post(`/admin/tenants/${tenantId}/systems/${connectionId}/test`);
+    const response = await api.post(`${this.API_PREFIX}/admin/tenants/${tenantId}/systems/${connectionId}/test`);
     return response.data;
   }
 

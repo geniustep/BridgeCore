@@ -35,12 +35,29 @@ class ConversationService:
             domain = [
                 ("channel_partner_ids", "in", [partner_id])
             ]
-            channels = self.odoo.search_read(
-                "mail.channel",
-                domain,
-                fields=["id", "name", "channel_type", "public", "description", "channel_partner_ids"],
-                limit=100
-            )
+            # Odoo 18 uses discuss.channel instead of mail.channel
+            # discuss.channel doesn't have 'public' field, use 'group_public_id' or check channel_type
+            try:
+                channels = self.odoo.search_read(
+                    "discuss.channel",
+                    domain,
+                    fields=["id", "name", "channel_type", "description", "channel_partner_ids"],
+                    limit=100
+                )
+                # Add public field based on channel_type (channel_type='channel' is public, 'chat' is private)
+                for ch in channels:
+                    ch["public"] = "public" if ch.get("channel_type") == "channel" else "private"
+            except Exception as e:
+                # Fallback to mail.channel for older Odoo versions
+                if "404" in str(e) or "Not Found" in str(e):
+                    channels = self.odoo.search_read(
+                        "mail.channel",
+                        domain,
+                        fields=["id", "name", "channel_type", "public", "description", "channel_partner_ids"],
+                        limit=100
+                    )
+                else:
+                    raise
         except Exception as e:
             logger.error(f"Failed to get channels for partner {partner_id}: {str(e)}")
             raise
@@ -174,7 +191,7 @@ class ConversationService:
         )
         
         # Invalidate cache for this channel/record
-        if model == "mail.channel":
+        if model in ("mail.channel", "discuss.channel"):
             cache_key = f"conversation:messages:channel:{res_id}"
         else:
             cache_key = f"conversation:messages:{model}:{res_id}"
@@ -245,17 +262,32 @@ class ConversationService:
             channel = await service.get_or_create_dm_channel([196])
             channel_id = channel.get('discuss.channel', [{}])[0].get('id')
         """
-        # Use mail.channel.channel_get (works with discuss.channel too in Odoo 18)
+        # Use discuss.channel.channel_get (Odoo 18) or mail.channel.channel_get (older versions)
         # channel_get returns a dict with 'discuss.channel', 'discuss.channel.member', 'res.partner' keys
-        result = self.odoo.call_kw(
-            "mail.channel",
-            "channel_get",
-            [],
-            {
-                "partners_to": partner_ids,
-                "force_open": True
-            }
-        )
+        try:
+            result = self.odoo.call_kw(
+                "discuss.channel",
+                "channel_get",
+                [],
+                {
+                    "partners_to": partner_ids,
+                    "force_open": True
+                }
+            )
+        except Exception as e:
+            # Fallback to mail.channel for older Odoo versions
+            if "404" in str(e) or "Not Found" in str(e):
+                result = self.odoo.call_kw(
+                    "mail.channel",
+                    "channel_get",
+                    [],
+                    {
+                        "partners_to": partner_ids,
+                        "force_open": True
+                    }
+                )
+            else:
+                raise
         return result
     
     async def subscribe_followers(

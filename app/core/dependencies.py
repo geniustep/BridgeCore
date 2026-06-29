@@ -341,5 +341,17 @@ async def get_odoo_adapter(
     # Create and return adapter
     adapter = OdooAdapter(config)
     await adapter.connect()
+    
+    # Authenticate to get session_id
+    auth_result = await adapter.authenticate(
+        config.get("username") or config.get("login"),
+        config.get("password")
+    )
+    
+    if not auth_result.get("success"):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Failed to authenticate with Odoo"
+        )
 
     return adapter

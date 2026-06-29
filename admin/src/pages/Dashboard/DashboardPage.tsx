@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Row, Col, Card, Statistic, Spin, Alert } from 'antd';
+import { Row, Col, Card, Statistic, Spin, Alert, Divider, Typography } from 'antd';
 import {
   TeamOutlined,
   CheckCircleOutlined,
@@ -11,6 +11,10 @@ import {
 import { analyticsService } from '@/services/analytics.service';
 import { SystemOverview } from '@/types';
 import { useTenantStore } from '@/store/tenant.store';
+import AlertWidget from '@/components/Dashboard/AlertWidget';
+import SecurityWidget from '@/components/Dashboard/SecurityWidget';
+
+const { Title } = Typography;
 
 const DashboardPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
@@ -96,7 +100,7 @@ const DashboardPage: React.FC = () => {
         </Col>
       </Row>
 
-      <h2 style={{ marginTop: 32 }}>Last 24 Hours</h2>
+      <Title level={4} style={{ marginTop: 32 }}>Last 24 Hours</Title>
       <Row gutter={[16, 16]}>
         <Col xs={24} sm={12} lg={8}>
           <Card>
@@ -128,6 +132,18 @@ const DashboardPage: React.FC = () => {
               precision={0}
             />
           </Card>
+        </Col>
+      </Row>
+
+      {/* Monitoring & Security Section */}
+      <Divider />
+      <Title level={4}>Monitoring & Security</Title>
+      <Row gutter={[16, 16]}>
+        <Col xs={24} lg={12}>
+          <AlertWidget />
+        </Col>
+        <Col xs={24} lg={12}>
+          <SecurityWidget />
         </Col>
       </Row>
     </div>

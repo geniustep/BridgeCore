@@ -15,6 +15,8 @@ import TenantUsersPage from './pages/Tenants/TenantUsersPage';
 import AnalyticsPage from './pages/Analytics/AnalyticsPage';
 import UsageLogsPage from './pages/Logs/UsageLogsPage';
 import ErrorLogsPage from './pages/Logs/ErrorLogsPage';
+import AlertsPage from './pages/Alerts/AlertsPage';
+import IPBlocksPage from './pages/Security/IPBlocksPage';
 
 // Layout
 import MainLayout from './components/Layout/MainLayout';
@@ -92,6 +94,8 @@ const App: React.FC = () => {
             <Route path="analytics" element={<AnalyticsPage />} />
             <Route path="logs/usage" element={<UsageLogsPage />} />
             <Route path="logs/errors" element={<ErrorLogsPage />} />
+            <Route path="alerts" element={<AlertsPage />} />
+            <Route path="security/ip-blocks" element={<IPBlocksPage />} />
           </Route>
 
           {/* Fallback */}

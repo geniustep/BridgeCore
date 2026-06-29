@@ -5,8 +5,12 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional, List
 from uuid import UUID
+from datetime import datetime
+import redis.asyncio as redis
+from pydantic import BaseModel
 
 from app.db.session import get_db
+from app.core.config import settings
 from app.schemas.admin import (
     TenantCreate,
     TenantUpdate,
@@ -17,6 +21,7 @@ from app.services.tenant_service import TenantService
 from app.api.routes.admin.dependencies import get_current_admin
 from app.models.admin import Admin
 from app.models.tenant import TenantStatus
+from loguru import logger
 
 router = APIRouter(prefix="/admin/tenants", tags=["Admin Tenant Management"])
 
@@ -328,3 +333,152 @@ async def test_tenant_connection(
     tenant_service = TenantService(db)
     result = await tenant_service.test_odoo_connection(tenant_id)
     return result
+
+
+class RateLimitStatus(BaseModel):
+    """Rate limit status response"""
+    hourly_count: int
+    hourly_limit: int
+    hourly_remaining: int
+    daily_count: int
+    daily_limit: int
+    daily_remaining: int
+    hourly_key: str
+    daily_key: str
+
+
+@router.get("/{tenant_id}/rate-limit", response_model=RateLimitStatus)
+async def get_rate_limit_status(
+    tenant_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_admin: Admin = Depends(get_current_admin)
+):
+    """
+    Get current rate limit status for a tenant
+
+    **Path Parameters:**
+    - tenant_id: Tenant UUID
+
+    **Requires:**
+    - Valid admin JWT token
+
+    **Returns:**
+    - Current rate limit counts and limits
+    """
+    tenant_service = TenantService(db)
+    tenant = await tenant_service.get_tenant(tenant_id)
+    
+    if not tenant:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tenant not found"
+        )
+
+    # Get limits
+    hourly_limit = tenant.max_requests_per_hour or settings.DEFAULT_TENANT_RATE_LIMIT_PER_HOUR
+    daily_limit = tenant.max_requests_per_day or settings.DEFAULT_TENANT_RATE_LIMIT_PER_DAY
+
+    # Connect to Redis
+    redis_client = await redis.from_url(
+        settings.REDIS_URL,
+        encoding="utf-8",
+        decode_responses=True
+    )
+
+    try:
+        # Get current keys
+        now = datetime.utcnow()
+        hour_key = f"rate_limit:tenant:{tenant_id}:hour:{now.strftime('%Y%m%d%H')}"
+        day_key = f"rate_limit:tenant:{tenant_id}:day:{now.strftime('%Y%m%d')}"
+
+        # Get counts
+        hourly_count = int(await redis_client.get(hour_key) or 0)
+        daily_count = int(await redis_client.get(day_key) or 0)
+
+        return RateLimitStatus(
+            hourly_count=hourly_count,
+            hourly_limit=hourly_limit,
+            hourly_remaining=max(0, hourly_limit - hourly_count),
+            daily_count=daily_count,
+            daily_limit=daily_limit,
+            daily_remaining=max(0, daily_limit - daily_count),
+            hourly_key=hour_key,
+            daily_key=day_key
+        )
+    finally:
+        await redis_client.close()
+
+
+@router.post("/{tenant_id}/rate-limit/reset")
+async def reset_rate_limit(
+    tenant_id: UUID,
+    reset_type: str = Query("all", regex="^(daily|hourly|all)$"),
+    db: AsyncSession = Depends(get_db),
+    current_admin: Admin = Depends(get_current_admin)
+):
+    """
+    Reset rate limit counters for a tenant
+
+    **Path Parameters:**
+    - tenant_id: Tenant UUID
+
+    **Query Parameters:**
+    - reset_type: Type of reset (daily, hourly, or all) - default: all
+
+    **Requires:**
+    - Valid admin JWT token
+
+    **Returns:**
+    - Message confirming reset
+    """
+    tenant_service = TenantService(db)
+    tenant = await tenant_service.get_tenant(tenant_id)
+    
+    if not tenant:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tenant not found"
+        )
+
+    # Connect to Redis
+    redis_client = await redis.from_url(
+        settings.REDIS_URL,
+        encoding="utf-8",
+        decode_responses=True
+    )
+
+    try:
+        now = datetime.utcnow()
+        deleted_keys = []
+
+        if reset_type in ["daily", "all"]:
+            day_key = f"rate_limit:tenant:{tenant_id}:day:{now.strftime('%Y%m%d')}"
+            result = await redis_client.delete(day_key)
+            if result:
+                deleted_keys.append(day_key)
+                logger.info(f"Deleted daily rate limit key: {day_key}")
+
+        if reset_type in ["hourly", "all"]:
+            hour_key = f"rate_limit:tenant:{tenant_id}:hour:{now.strftime('%Y%m%d%H')}"
+            result = await redis_client.delete(hour_key)
+            if result:
+                deleted_keys.append(hour_key)
+                logger.info(f"Deleted hourly rate limit key: {hour_key}")
+
+        if reset_type == "all":
+            # Delete all keys for this tenant
+            pattern = f"rate_limit:tenant:{tenant_id}:*"
+            keys = await redis_client.keys(pattern)
+            if keys:
+                deleted = await redis_client.delete(*keys)
+                deleted_keys.extend(keys)
+                logger.info(f"Deleted {deleted} rate limit keys for tenant {tenant_id}")
+
+        return {
+            "message": f"Rate limit reset successful",
+            "reset_type": reset_type,
+            "deleted_keys": len(deleted_keys),
+            "keys": deleted_keys
+        }
+    finally:
+        await redis_client.close()

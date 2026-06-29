@@ -232,6 +232,17 @@ export interface ConnectionTestResult {
   };
 }
 
+export interface RateLimitStatus {
+  hourly_count: number;
+  hourly_limit: number;
+  hourly_remaining: number;
+  daily_count: number;
+  daily_limit: number;
+  daily_remaining: number;
+  hourly_key: string;
+  daily_key: string;
+}
+
 // ============= Multi-System Types =============
 
 export type SystemType = 'odoo' | 'moodle' | 'sap' | 'salesforce' | 'dynamics' | 'custom';
@@ -314,4 +325,91 @@ export interface SystemConnectionTestResponse {
   };
   error?: string;
   tested_at: string;
+}
+
+// ============= Alert Types =============
+
+export type AlertType = 
+  | 'rate_limit_warning'
+  | 'rate_limit_exceeded'
+  | 'high_error_rate'
+  | 'slow_response'
+  | 'suspicious_ip'
+  | 'tenant_suspended'
+  | 'connection_failed'
+  | 'security_threat';
+
+export type AlertSeverity = 'info' | 'warning' | 'error' | 'critical';
+export type AlertStatusType = 'active' | 'acknowledged' | 'resolved' | 'dismissed';
+
+export interface Alert {
+  id: number;
+  tenant_id: string | null;
+  alert_type: AlertType;
+  severity: AlertSeverity;
+  status: AlertStatusType;
+  title: string;
+  message: string;
+  details: Record<string, any> | null;
+  threshold_value: number | null;
+  current_value: number | null;
+  created_at: string;
+  acknowledged_at: string | null;
+  acknowledged_by: string | null;
+  resolved_at: string | null;
+  resolved_by: string | null;
+  expires_at: string | null;
+}
+
+export interface AlertCounts {
+  critical: number;
+  error: number;
+  warning: number;
+  info: number;
+  total: number;
+}
+
+// ============= IP Block Types =============
+
+export type BlockReason = 
+  | 'rate_limit_abuse'
+  | 'brute_force'
+  | 'suspicious_activity'
+  | 'security_threat'
+  | 'manual_block'
+  | 'spam';
+
+export interface IPBlock {
+  id: number;
+  ip_address: string;
+  ip_range: string | null;
+  reason: BlockReason;
+  description: string | null;
+  tenant_id: string | null;
+  is_permanent: boolean;
+  blocked_at: string;
+  expires_at: string | null;
+  violation_count: number;
+  last_violation_at: string | null;
+  blocked_by: string | null;
+  is_active: boolean;
+  unblocked_at: string | null;
+  unblocked_by: string | null;
+  unblock_reason: string | null;
+  user_agent: string | null;
+}
+
+export interface IPBlockStats {
+  active_blocks: number;
+  by_reason: Record<string, number>;
+  blocked_last_24h: number;
+}
+
+export interface IPBlockCreate {
+  ip_address: string;
+  reason: BlockReason;
+  description?: string;
+  tenant_id?: string;
+  duration_hours?: number;
+  is_permanent?: boolean;
 }

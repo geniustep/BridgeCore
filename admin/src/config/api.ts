@@ -17,37 +17,39 @@ console.log('[API CONFIG]', {
   timestamp: new Date().toISOString()
 });
 
-// API endpoints
+// API endpoints - use /api prefix for clear separation from frontend routes
+const API_PREFIX = '/api';
+
 export const API_ENDPOINTS = {
   // Auth
-  LOGIN: '/admin/auth/login',
-  LOGOUT: '/admin/auth/logout',
-  ME: '/admin/auth/me',
+  LOGIN: `${API_PREFIX}/admin/auth/login`,
+  LOGOUT: `${API_PREFIX}/admin/auth/logout`,
+  ME: `${API_PREFIX}/admin/auth/me`,
 
   // Tenants
-  TENANTS: '/admin/tenants',
-  TENANT: (id: string) => `/admin/tenants/${id}`,
-  TENANT_SUSPEND: (id: string) => `/admin/tenants/${id}/suspend`,
-  TENANT_ACTIVATE: (id: string) => `/admin/tenants/${id}/activate`,
-  TENANT_TEST: (id: string) => `/admin/tenants/${id}/test-connection`,
-  TENANT_STATS: '/admin/tenants/statistics',
+  TENANTS: `${API_PREFIX}/admin/tenants`,
+  TENANT: (id: string) => `${API_PREFIX}/admin/tenants/${id}`,
+  TENANT_SUSPEND: (id: string) => `${API_PREFIX}/admin/tenants/${id}/suspend`,
+  TENANT_ACTIVATE: (id: string) => `${API_PREFIX}/admin/tenants/${id}/activate`,
+  TENANT_TEST: (id: string) => `${API_PREFIX}/admin/tenants/${id}/test-connection`,
+  TENANT_STATS: `${API_PREFIX}/admin/tenants/statistics`,
 
   // Plans
-  PLANS: '/admin/plans',
-  PLAN: (id: string) => `/admin/plans/${id}`,
+  PLANS: `${API_PREFIX}/admin/plans`,
+  PLAN: (id: string) => `${API_PREFIX}/admin/plans/${id}`,
 
   // Analytics
-  ANALYTICS_OVERVIEW: '/admin/analytics/overview',
-  ANALYTICS_TOP_TENANTS: '/admin/analytics/top-tenants',
-  ANALYTICS_TENANT: (id: string) => `/admin/analytics/tenants/${id}`,
-  ANALYTICS_TENANT_DAILY: (id: string) => `/admin/analytics/tenants/${id}/daily`,
+  ANALYTICS_OVERVIEW: `${API_PREFIX}/admin/analytics/overview`,
+  ANALYTICS_TOP_TENANTS: `${API_PREFIX}/admin/analytics/top-tenants`,
+  ANALYTICS_TENANT: (id: string) => `${API_PREFIX}/admin/analytics/tenants/${id}`,
+  ANALYTICS_TENANT_DAILY: (id: string) => `${API_PREFIX}/admin/analytics/tenants/${id}/daily`,
 
   // Logs
-  LOGS_USAGE: '/admin/logs/usage',
-  LOGS_USAGE_SUMMARY: '/admin/logs/usage/summary',
-  LOGS_ERRORS: '/admin/logs/errors',
-  LOGS_ERRORS_SUMMARY: '/admin/logs/errors/summary',
-  LOGS_ERROR_RESOLVE: (id: number) => `/admin/logs/errors/${id}/resolve`,
+  LOGS_USAGE: `${API_PREFIX}/admin/logs/usage`,
+  LOGS_USAGE_SUMMARY: `${API_PREFIX}/admin/logs/usage/summary`,
+  LOGS_ERRORS: `${API_PREFIX}/admin/logs/errors`,
+  LOGS_ERRORS_SUMMARY: `${API_PREFIX}/admin/logs/errors/summary`,
+  LOGS_ERROR_RESOLVE: (id: number) => `${API_PREFIX}/admin/logs/errors/${id}/resolve`,
 };
 
 // Local storage keys

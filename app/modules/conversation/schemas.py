@@ -55,7 +55,7 @@ class MailChannelData(BaseModel):
     """
     id: int
     name: str = Field(..., description="Channel name")
-    channel_type: Literal["chat", "channel"] = Field(..., description="Channel type")
+    channel_type: Literal["chat", "channel", "group"] = Field(..., description="Channel type")
     public: Literal["public", "private", "groups"] = Field(
         default="private", description="Channel visibility"
     )

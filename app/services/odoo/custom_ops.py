@@ -91,10 +91,28 @@ class CustomOperations(OdooOperationsService):
             else:
                 method_kwargs["context"] = context
 
+        # Special handling for search_read: domain should be in args[0], not kwargs
+        method_args = list(args) if args else []
+        if method == "search_read" and "domain" in method_kwargs:
+            # Move domain from kwargs to args[0]
+            domain = method_kwargs.pop("domain")
+            if not method_args:
+                method_args = [domain or []]
+            elif len(method_args) > 0 and isinstance(method_args[0], list):
+                # If args[0] exists and is a list, use it (user provided domain in args)
+                pass
+            else:
+                # If args[0] is not a list or doesn't exist, set it to domain
+                if not method_args:
+                    method_args = [domain or []]
+                else:
+                    method_args[0] = domain or []
+            logger.debug(f"🔧 [CALL_KW] Moved domain from kwargs to args[0] for search_read")
+
         start_time = time.time()
         
         # Escape curly braces in args for .format()
-        args_safe = str(args).replace('{', '{{').replace('}', '}}')
+        args_safe = str(method_args).replace('{', '{{').replace('}', '}}')
         logger.info(
             "🔧 [CALL_KW] Starting call_kw operation\n"
             "   Model: {}\n"
@@ -112,7 +130,7 @@ class CustomOperations(OdooOperationsService):
             result = await self._execute_kw(
                 model=model,
                 method=method,
-                args=args or [],
+                args=method_args,
                 kwargs=method_kwargs
             )
 

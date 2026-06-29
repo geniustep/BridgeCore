@@ -36,8 +36,11 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
         self._tenant_cache_ttl_seconds: int = 30
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        logger.info(f"[TenantContext] Request: {request.method} {request.url.path}")
+        
         # Skip tenant validation for OPTIONS requests (CORS preflight)
         if request.method == "OPTIONS":
+            logger.info(f"[TenantContext] Skipping OPTIONS request")
             return await call_next(request)
         
         # Skip tenant validation for public routes
@@ -53,11 +56,13 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
         ]
 
         if any(request.url.path.startswith(path) for path in public_paths):
+            logger.info(f"[TenantContext] Skipping public path: {request.url.path}")
             return await call_next(request)
 
         # Extract token
         auth_header = request.headers.get("authorization")
         if not auth_header or not auth_header.startswith("Bearer "):
+            logger.info(f"[TenantContext] No authorization header, skipping tenant validation")
             # No tenant token, continue (might be admin or public route)
             return await call_next(request)
 
@@ -66,7 +71,11 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
         # Log the request path for debugging
         logger.info(f"[TenantContext] Processing request: {request.url.path}")
         
-        payload = decode_tenant_token(token)
+        try:
+            payload = decode_tenant_token(token)
+        except Exception as decode_error:
+            logger.error(f"[TenantContext] Failed to decode token: {str(decode_error)}", exc_info=True)
+            return await call_next(request)
 
         if not payload:
             # Not a tenant token (might be admin token)
@@ -213,21 +222,32 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
                 "error_message": str(e)
             }
             logger.error(
-                f"Error in tenant context middleware: {str(e)}",
+                f"[TenantContext] Error in tenant context middleware: {str(e)}",
                 exc_info=True,
                 extra=error_details
             )
             
             # Log more details for debugging
             import traceback
-            logger.error(f"Full traceback: {traceback.format_exc()}")
+            logger.error(f"[TenantContext] Full traceback: {traceback.format_exc()}")
+            
+            # If we have a cached tenant, use it as fallback even on error
+            if tenant_id and tenant_id in self._tenant_cache:
+                cached_expires, cached_tenant = self._tenant_cache[tenant_id]
+                if cached_expires > time.time():
+                    logger.warning(f"[TenantContext] Using cached tenant {tenant_id} due to error: {str(e)}")
+                    request.state.tenant_id = tenant_id
+                    request.state.user_id = user_id
+                    request.state.tenant = cached_tenant
+                    response = await call_next(request)
+                    return response
             
             # Under load, DB connectivity/pool issues can happen.
             # Return a proper JSON response instead of raising inside BaseHTTPMiddleware,
             # which can otherwise surface as plain-text 500.
             return JSONResponse(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                content={"detail": "Failed to validate tenant context. Please retry."},
+                content={"detail": f"Failed to validate tenant context: {str(e)}. Please retry."},
             )
 
         # Continue processing request

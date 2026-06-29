@@ -158,12 +158,17 @@ async def get_channels(
             if isinstance(partner_ids, list) and len(partner_ids) > 0 and isinstance(partner_ids[0], (list, tuple)):
                 partner_ids = [p[0] if isinstance(p, (list, tuple)) else p for p in partner_ids]
             
+            # Normalize channel_type (Odoo 18 may return 'group', map to 'channel')
+            channel_type = ch.get("channel_type", "channel")
+            if channel_type not in ("chat", "channel", "group"):
+                channel_type = "channel"
+            
             channel_data.append(MailChannelData(
                 id=ch["id"],
                 name=ch["name"],
-                channel_type=ch.get("channel_type", "channel"),
+                channel_type=channel_type,
                 public=ch.get("public", "private"),
-                description=ch.get("description"),
+                description=ch.get("description") if ch.get("description") and isinstance(ch.get("description"), str) else None,
                 members_partner_ids=partner_ids,
                 channel_partner_ids=partner_ids,
             ))

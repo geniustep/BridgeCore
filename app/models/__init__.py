@@ -26,6 +26,10 @@ from app.models.notification import (
     NotificationType, NotificationPriority, NotificationChannel
 )
 
+# Alerts & IP Blocking (NEW)
+from app.models.alert import Alert, AlertType, AlertSeverity, AlertStatus
+from app.models.ip_block import IPBlock, BlockReason
+
 __all__ = [
     # Original models
     "User",
@@ -63,4 +67,11 @@ __all__ = [
     "NotificationType",
     "NotificationPriority",
     "NotificationChannel",
+    # Alerts & IP Blocking
+    "Alert",
+    "AlertType",
+    "AlertSeverity",
+    "AlertStatus",
+    "IPBlock",
+    "BlockReason",
 ]

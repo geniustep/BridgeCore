@@ -17,6 +17,8 @@ import {
   Badge,
   Tooltip,
   Divider,
+  Progress,
+  Modal,
 } from 'antd';
 import {
   ArrowLeftOutlined,
@@ -34,7 +36,7 @@ import {
   LineChartOutlined,
 } from '@ant-design/icons';
 import { tenantService } from '@/services/tenant.service';
-import { Tenant } from '@/types';
+import { Tenant, RateLimitStatus } from '@/types';
 import TenantSystemsList from '@/components/Systems/TenantSystemsList';
 import AddSystemModal from '@/components/Systems/AddSystemModal';
 import dayjs from 'dayjs';
@@ -52,10 +54,14 @@ const TenantDetailsPage: React.FC = () => {
   const [testing, setTesting] = useState(false);
   const [addSystemModalVisible, setAddSystemModalVisible] = useState(false);
   const [systemsRefreshKey, setSystemsRefreshKey] = useState(0);
+  const [rateLimitStatus, setRateLimitStatus] = useState<RateLimitStatus | null>(null);
+  const [rateLimitLoading, setRateLimitLoading] = useState(false);
+  const [rateLimitResetting, setRateLimitResetting] = useState(false);
 
   useEffect(() => {
     if (id) {
       fetchTenant();
+      fetchRateLimitStatus();
     }
   }, [id]);
 
@@ -88,6 +94,37 @@ const TenantDetailsPage: React.FC = () => {
       );
     } finally {
       setTesting(false);
+    }
+  };
+
+  const fetchRateLimitStatus = async () => {
+    if (!id) return;
+
+    setRateLimitLoading(true);
+    try {
+      const status = await tenantService.getRateLimitStatus(id);
+      setRateLimitStatus(status);
+    } catch (error: any) {
+      console.error('Failed to fetch rate limit status:', error);
+    } finally {
+      setRateLimitLoading(false);
+    }
+  };
+
+  const handleResetRateLimit = async (resetType: 'daily' | 'hourly' | 'all') => {
+    if (!id) return;
+
+    setRateLimitResetting(true);
+    try {
+      const result = await tenantService.resetRateLimit(id, resetType);
+      message.success(`Rate limit reset successful! Deleted ${result.deleted_keys} key(s)`);
+      await fetchRateLimitStatus(); // Refresh status
+    } catch (error: any) {
+      message.error(
+        error.response?.data?.detail || 'Failed to reset rate limit'
+      );
+    } finally {
+      setRateLimitResetting(false);
     }
   };
 
@@ -358,6 +395,158 @@ const TenantDetailsPage: React.FC = () => {
             )}
           </Card>
 
+          {/* Rate Limit Status - Quick View */}
+          <Card
+            title={
+              <Space>
+                <ThunderboltOutlined />
+                Rate Limit Status
+                <Badge 
+                  count={rateLimitStatus ? (rateLimitStatus.daily_remaining === 0 || rateLimitStatus.hourly_remaining === 0 ? '!' : null) : null}
+                  style={{ backgroundColor: '#ff4d4f' }}
+                />
+              </Space>
+            }
+            extra={
+              <Space>
+                <Button
+                  size="small"
+                  onClick={fetchRateLimitStatus}
+                  loading={rateLimitLoading}
+                >
+                  Refresh
+                </Button>
+                <Button
+                  size="small"
+                  type="primary"
+                  danger
+                  icon={<ThunderboltOutlined />}
+                  onClick={() => {
+                    Modal.confirm({
+                      title: 'Reset All Rate Limits?',
+                      content: 'This will reset both daily and hourly rate limits for this tenant. Continue?',
+                      okText: 'Yes, Reset All',
+                      okType: 'danger',
+                      onOk: () => handleResetRateLimit('all'),
+                    });
+                  }}
+                  loading={rateLimitResetting}
+                >
+                  Reset All
+                </Button>
+                <Button
+                  size="small"
+                  type="link"
+                  onClick={() => {
+                    const tabs = document.querySelectorAll('.ant-tabs-tab');
+                    const rateLimitsTab = Array.from(tabs).find((tab: any) => 
+                      tab.textContent?.includes('Rate Limits')
+                    ) as HTMLElement;
+                    if (rateLimitsTab) {
+                      rateLimitsTab.click();
+                    }
+                  }}
+                >
+                  View Details
+                </Button>
+              </Space>
+            }
+            style={{ marginBottom: 16 }}
+          >
+            {rateLimitLoading ? (
+              <div style={{ textAlign: 'center', padding: '20px' }}>
+                <Spin />
+              </div>
+            ) : rateLimitStatus ? (
+              <Row gutter={[16, 16]}>
+                <Col xs={24} sm={12}>
+                  <Card size="small" bordered={false}>
+                    <Statistic
+                      title="Daily Requests"
+                      value={rateLimitStatus.daily_count}
+                      suffix={`/ ${rateLimitStatus.daily_limit.toLocaleString()}`}
+                      valueStyle={{
+                        color: rateLimitStatus.daily_remaining > 0 ? '#52c41a' : '#ff4d4f'
+                      }}
+                      prefix={<CalendarOutlined />}
+                    />
+                    <div style={{ marginTop: 8 }}>
+                      <Text type="secondary">Remaining: </Text>
+                      <Text strong style={{ color: rateLimitStatus.daily_remaining > 0 ? '#52c41a' : '#ff4d4f' }}>
+                        {rateLimitStatus.daily_remaining.toLocaleString()}
+                      </Text>
+                      <Progress
+                        percent={Math.min(100, Math.round((rateLimitStatus.daily_count / rateLimitStatus.daily_limit) * 100))}
+                        status={rateLimitStatus.daily_remaining > 0 ? 'active' : 'exception'}
+                        size="small"
+                        style={{ marginTop: 8 }}
+                      />
+                    </div>
+                    <Button
+                        type={rateLimitStatus.daily_remaining === 0 ? "primary" : "default"}
+                        danger={rateLimitStatus.daily_remaining === 0}
+                        size="small"
+                        onClick={() => handleResetRateLimit('daily')}
+                        loading={rateLimitResetting}
+                        style={{ marginTop: 12 }}
+                        icon={<ThunderboltOutlined />}
+                      >
+                        Reset Daily
+                      </Button>
+                  </Card>
+                </Col>
+                <Col xs={24} sm={12}>
+                  <Card size="small" bordered={false}>
+                    <Statistic
+                      title="Hourly Requests"
+                      value={rateLimitStatus.hourly_count}
+                      suffix={`/ ${rateLimitStatus.hourly_limit.toLocaleString()}`}
+                      valueStyle={{
+                        color: rateLimitStatus.hourly_remaining > 0 ? '#52c41a' : '#ff4d4f'
+                      }}
+                      prefix={<ClockCircleOutlined />}
+                    />
+                    <div style={{ marginTop: 8 }}>
+                      <Text type="secondary">Remaining: </Text>
+                      <Text strong style={{ color: rateLimitStatus.hourly_remaining > 0 ? '#52c41a' : '#ff4d4f' }}>
+                        {rateLimitStatus.hourly_remaining.toLocaleString()}
+                      </Text>
+                      <Progress
+                        percent={Math.min(100, Math.round((rateLimitStatus.hourly_count / rateLimitStatus.hourly_limit) * 100))}
+                        status={rateLimitStatus.hourly_remaining > 0 ? 'active' : 'exception'}
+                        size="small"
+                        style={{ marginTop: 8 }}
+                      />
+                    </div>
+                    <Button
+                        type={rateLimitStatus.hourly_remaining === 0 ? "primary" : "default"}
+                        danger={rateLimitStatus.hourly_remaining === 0}
+                        size="small"
+                        onClick={() => handleResetRateLimit('hourly')}
+                        loading={rateLimitResetting}
+                        style={{ marginTop: 12 }}
+                        icon={<ThunderboltOutlined />}
+                      >
+                        Reset Hourly
+                      </Button>
+                  </Card>
+                </Col>
+              </Row>
+            ) : (
+              <Alert
+                message="Rate limit status not loaded"
+                description="Click Refresh to load rate limit information."
+                type="info"
+                showIcon
+                action={
+                  <Button size="small" onClick={fetchRateLimitStatus}>
+                    Load
+                  </Button>
+                }
+              />
+            )}
+          </Card>
+
           {/* Timestamps */}
           <Card title="Timeline" size="small">
             <Descriptions bordered column={{ xs: 1, sm: 3 }} size="small">
@@ -449,6 +638,189 @@ const TenantDetailsPage: React.FC = () => {
         </span>
       ),
       children: <TenantSystemsList key={systemsRefreshKey} tenantId={id!} />,
+    },
+    {
+      key: 'rate-limits',
+      label: (
+        <span>
+          <ThunderboltOutlined /> Rate Limits
+        </span>
+      ),
+      children: (
+        <div>
+          <Card
+            title={
+              <Space>
+                <ThunderboltOutlined />
+                Rate Limit Status & Management
+              </Space>
+            }
+            extra={
+              <Button
+                type="primary"
+                icon={<ThunderboltOutlined />}
+                onClick={fetchRateLimitStatus}
+                loading={rateLimitLoading}
+              >
+                Refresh Status
+              </Button>
+            }
+            style={{ marginBottom: 16 }}
+          >
+            {rateLimitLoading ? (
+              <div style={{ textAlign: 'center', padding: '40px' }}>
+                <Spin size="large" />
+                <div style={{ marginTop: 16 }}>
+                  <Text type="secondary">Loading rate limit status...</Text>
+                </div>
+              </div>
+            ) : rateLimitStatus ? (
+              <>
+                <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+                  <Col xs={24} sm={12}>
+                    <Card 
+                      size="small" 
+                      style={{ 
+                        background: rateLimitStatus.daily_remaining > 0 ? '#f6ffed' : '#fff1f0',
+                        border: `2px solid ${rateLimitStatus.daily_remaining > 0 ? '#b7eb8f' : '#ffccc7'}`
+                      }}
+                    >
+                      <Statistic
+                        title="Daily Requests"
+                        value={rateLimitStatus.daily_count}
+                        suffix={`/ ${rateLimitStatus.daily_limit.toLocaleString()}`}
+                        valueStyle={{
+                          color: rateLimitStatus.daily_remaining > 0 ? '#52c41a' : '#ff4d4f',
+                          fontSize: '24px'
+                        }}
+                        prefix={<CalendarOutlined />}
+                      />
+                      <div style={{ marginTop: 12 }}>
+                        <Space direction="vertical" style={{ width: '100%' }}>
+                          <div>
+                            <Text type="secondary">Remaining: </Text>
+                            <Text strong style={{ fontSize: '16px', color: rateLimitStatus.daily_remaining > 0 ? '#52c41a' : '#ff4d4f' }}>
+                              {rateLimitStatus.daily_remaining.toLocaleString()}
+                            </Text>
+                          </div>
+                          <Progress
+                            percent={Math.min(100, Math.round((rateLimitStatus.daily_count / rateLimitStatus.daily_limit) * 100))}
+                            status={rateLimitStatus.daily_remaining > 0 ? 'active' : 'exception'}
+                            strokeColor={rateLimitStatus.daily_remaining > 0 ? '#52c41a' : '#ff4d4f'}
+                          />
+                        </Space>
+                      </div>
+                    </Card>
+                  </Col>
+                  <Col xs={24} sm={12}>
+                    <Card 
+                      size="small" 
+                      style={{ 
+                        background: rateLimitStatus.hourly_remaining > 0 ? '#f6ffed' : '#fff1f0',
+                        border: `2px solid ${rateLimitStatus.hourly_remaining > 0 ? '#b7eb8f' : '#ffccc7'}`
+                      }}
+                    >
+                      <Statistic
+                        title="Hourly Requests"
+                        value={rateLimitStatus.hourly_count}
+                        suffix={`/ ${rateLimitStatus.hourly_limit.toLocaleString()}`}
+                        valueStyle={{
+                          color: rateLimitStatus.hourly_remaining > 0 ? '#52c41a' : '#ff4d4f',
+                          fontSize: '24px'
+                        }}
+                        prefix={<ClockCircleOutlined />}
+                      />
+                      <div style={{ marginTop: 12 }}>
+                        <Space direction="vertical" style={{ width: '100%' }}>
+                          <div>
+                            <Text type="secondary">Remaining: </Text>
+                            <Text strong style={{ fontSize: '16px', color: rateLimitStatus.hourly_remaining > 0 ? '#52c41a' : '#ff4d4f' }}>
+                              {rateLimitStatus.hourly_remaining.toLocaleString()}
+                            </Text>
+                          </div>
+                          <Progress
+                            percent={Math.min(100, Math.round((rateLimitStatus.hourly_count / rateLimitStatus.hourly_limit) * 100))}
+                            status={rateLimitStatus.hourly_remaining > 0 ? 'active' : 'exception'}
+                            strokeColor={rateLimitStatus.hourly_remaining > 0 ? '#52c41a' : '#ff4d4f'}
+                          />
+                        </Space>
+                      </div>
+                    </Card>
+                  </Col>
+                </Row>
+
+                <Card 
+                  title="Reset Rate Limits"
+                  style={{ background: '#fafafa' }}
+                >
+                  <Space direction="vertical" style={{ width: '100%' }} size="large">
+                    <Alert
+                      message="Rate Limit Management"
+                      description="Use the buttons below to reset rate limit counters. This will allow the tenant to make requests again immediately."
+                      type="info"
+                      showIcon
+                      style={{ marginBottom: 16 }}
+                    />
+                    <Space wrap size="large">
+                      <Button
+                        type="default"
+                        size="large"
+                        onClick={() => handleResetRateLimit('daily')}
+                        loading={rateLimitResetting}
+                        danger={rateLimitStatus.daily_remaining === 0}
+                        icon={<CalendarOutlined />}
+                      >
+                        Reset Daily Limit
+                      </Button>
+                      <Button
+                        type="default"
+                        size="large"
+                        onClick={() => handleResetRateLimit('hourly')}
+                        loading={rateLimitResetting}
+                        danger={rateLimitStatus.hourly_remaining === 0}
+                        icon={<ClockCircleOutlined />}
+                      >
+                        Reset Hourly Limit
+                      </Button>
+                      <Button
+                        type="primary"
+                        size="large"
+                        danger
+                        onClick={() => {
+                          Modal.confirm({
+                            title: 'Reset All Rate Limits?',
+                            content: 'This will reset both daily and hourly rate limits for this tenant. Are you sure?',
+                            okText: 'Yes, Reset All',
+                            cancelText: 'Cancel',
+                            okType: 'danger',
+                            onOk: () => handleResetRateLimit('all'),
+                          });
+                        }}
+                        loading={rateLimitResetting}
+                        icon={<ThunderboltOutlined />}
+                      >
+                        Reset All Limits
+                      </Button>
+                    </Space>
+                  </Space>
+                </Card>
+              </>
+            ) : (
+              <Alert
+                message="Rate Limit Status Not Available"
+                description="Unable to load rate limit status. Please check the connection and try again."
+                type="warning"
+                showIcon
+                action={
+                  <Button size="small" onClick={fetchRateLimitStatus}>
+                    Retry
+                  </Button>
+                }
+              />
+            )}
+          </Card>
+        </div>
+      ),
     },
   ];
 

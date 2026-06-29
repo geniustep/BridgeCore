@@ -210,14 +210,23 @@ const TenantUsersPage: React.FC = () => {
       if (editingUser) {
         // Update user (without password)
         const { password, ...updateData } = values;
+        // Remove odoo_user_id if not provided (it's read-only in edit mode)
+        if (!updateData.odoo_user_id) {
+          delete updateData.odoo_user_id;
+        }
         await apiClient.put(`/admin/tenant-users/${editingUser.id}`, updateData);
         message.success('User updated successfully');
       } else {
         // Create new user (with password)
-        await apiClient.post('/admin/tenant-users', {
+        const createData: any = {
           ...values,
           tenant_id: tenantId,
-        });
+        };
+        // Only include odoo_user_id if it's provided
+        if (!createData.odoo_user_id) {
+          delete createData.odoo_user_id;
+        }
+        await apiClient.post('/admin/tenant-users', createData);
         message.success('User created successfully');
       }
       setModalVisible(false);
@@ -447,8 +456,8 @@ const TenantUsersPage: React.FC = () => {
               <Form.Item
                 name="odoo_user_id"
                 label="Odoo User"
-                rules={[{ required: true, message: 'Please select an Odoo user' }]}
-                tooltip="Select the Odoo user to link with this BridgeCore account"
+                rules={[]}
+                tooltip="Select the Odoo user to link with this BridgeCore account (optional)"
               >
                 <Select
                   placeholder="Select Odoo User"

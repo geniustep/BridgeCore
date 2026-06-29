@@ -1,7 +1,7 @@
 """
 Main FastAPI Application
 """
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, Request, status, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
@@ -24,7 +24,9 @@ from app.api.routes.admin import (
     analytics as admin_analytics,
     logs as admin_logs,
     odoo_helpers as admin_odoo_helpers,
-    systems as admin_systems
+    systems as admin_systems,
+    alerts as admin_alerts,
+    ip_blocks as admin_ip_blocks
 )
 from app.modules.webhook import router as webhook_router_v1
 from app.modules.webhook import router_v2 as webhook_router_v2
@@ -126,10 +128,12 @@ app.middleware("http")(logging_middleware)
 from app.middleware.usage_tracking import UsageTrackingMiddleware
 from app.middleware.tenant_context import TenantContextMiddleware
 from app.middleware.tenant_rate_limit import TenantRateLimitMiddleware
+from app.middleware.ip_block_middleware import IPBlockMiddleware
 
 app.add_middleware(UsageTrackingMiddleware)  # Track all tenant requests
 app.add_middleware(TenantContextMiddleware)  # Validate tenant context
 app.add_middleware(TenantRateLimitMiddleware)  # Enforce rate limits per tenant
+app.add_middleware(IPBlockMiddleware)  # Block banned IPs (NEW)
 
 # Prometheus Middleware
 app.add_middleware(PrometheusMiddleware)
@@ -157,15 +161,17 @@ app.include_router(barcode.router)
 app.include_router(files.router)
 app.include_router(websocket.router, prefix="/api/v1")
 
-# Admin routers (NEW)
-app.include_router(admin_auth.router)  # /admin/auth/*
-app.include_router(admin_tenants.router)  # /admin/tenants/*
-app.include_router(admin_tenant_users.router)  # /admin/tenant-users/*
-app.include_router(admin_plans.router)  # /admin/plans/*
-app.include_router(admin_analytics.router)  # /admin/analytics/*
-app.include_router(admin_logs.router)  # /admin/logs/*
-app.include_router(admin_odoo_helpers.router)  # /admin/odoo-helpers/*
-app.include_router(admin_systems.router)  # /admin/systems/*
+# Admin routers (NEW) - with /api prefix for clear separation from frontend routes
+app.include_router(admin_auth.router, prefix="/api")  # /api/admin/auth/*
+app.include_router(admin_tenants.router, prefix="/api")  # /api/admin/tenants/*
+app.include_router(admin_tenant_users.router, prefix="/api")  # /api/admin/tenant-users/*
+app.include_router(admin_plans.router, prefix="/api")  # /api/admin/plans/*
+app.include_router(admin_analytics.router, prefix="/api")  # /api/admin/analytics/*
+app.include_router(admin_logs.router, prefix="/api")  # /api/admin/logs/*
+app.include_router(admin_odoo_helpers.router, prefix="/api")  # /api/admin/odoo-helpers/*
+app.include_router(admin_systems.router, prefix="/api")  # /api/admin/systems/*
+app.include_router(admin_alerts.router, prefix="/api")  # /api/admin/alerts/*
+app.include_router(admin_ip_blocks.router, prefix="/api")  # /api/admin/ip-blocks/*
 
 # Webhook routers (NEW)
 app.include_router(webhook_router_v1.router)  # /api/v1/webhooks/*
@@ -227,10 +233,65 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     )
 
 
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    """Handle HTTP exceptions with proper error formatting"""
+    logger.error(
+        f"HTTPException: {exc.status_code} - {exc.detail}\n"
+        f"   Path: {request.url.path}\n"
+        f"   Method: {request.method}\n"
+        f"   Client IP: {request.client.host if request.client else 'unknown'}",
+        extra={
+            "status_code": exc.status_code,
+            "detail": exc.detail,
+            "path": request.url.path,
+            "method": request.method
+        }
+    )
+
+    error_message = exc.detail
+    if isinstance(exc.detail, dict):
+        error_message = exc.detail.get("message", str(exc.detail))
+    elif isinstance(exc.detail, str):
+        error_message = exc.detail
+
+    error_type_map = {
+        400: "BadRequest",
+        401: "Unauthorized",
+        403: "Forbidden",
+        404: "NotFound",
+        409: "Conflict",
+        422: "ValidationError",
+        429: "RateLimitExceeded",
+        500: "InternalServerError",
+        503: "ServiceUnavailable"
+    }
+    error_type = error_type_map.get(exc.status_code, "HttpError")
+
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": {
+                "type": error_type,
+                "message": error_message,
+                "request_id": request.state.request_id if hasattr(request.state, "request_id") else None
+            }
+        }
+    )
+
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     """Handle all unhandled exceptions"""
-    logger.exception(f"Unhandled exception: {str(exc)}")
+    if isinstance(exc, HTTPException):
+        raise exc
+    
+    logger.exception(
+        f"Unhandled exception: {str(exc)}\n"
+        f"   Path: {request.url.path}\n"
+        f"   Method: {request.method}\n"
+        f"   Client IP: {request.client.host if request.client else 'unknown'}"
+    )
 
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

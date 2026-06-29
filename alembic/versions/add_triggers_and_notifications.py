@@ -11,7 +11,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision = 'add_triggers_notifications'
-down_revision = None  # Update this with the previous migration ID
+down_revision = '005_multi_system'  # Based on multi-system migration
 branch_labels = None
 depends_on = None
 
